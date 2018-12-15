@@ -160,7 +160,7 @@ func (s *rpcServer) ConnectWpaNetwork(ctx context.Context,
 
 	tries := 1
 
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(1000 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -177,9 +177,22 @@ func (s *rpcServer) ConnectWpaNetwork(ctx context.Context,
 		log.Infof("Got status %v for ssid %v.", status.State, status.Ssid)
 
 		if status.Ssid == req.Ssid && status.State == "COMPLETED" {
-			log.Infof("Saving network %v", net)
 
-			err := wpa.Save("wlan0")
+			configuredNetworks, err := wpa.ListConfiguredNetworks("wlan0")
+			if err != nil {
+				log.Errorf("Listing configured networks failed: %v", err)
+			} else {
+				for _, configuredNetwork := range configuredNetworks {
+					err := wpa.RemoveNetwork("wlan0", configuredNetwork.Id)
+					if err != nil {
+						log.Warnf("Unable to remove configured network %v", configuredNetwork.Id)
+					}
+				}
+			}
+
+			log.Infof("Saving the modified network configuration")
+
+			err = wpa.Save("wlan0")
 			if err != nil {
 				log.Errorf("Saving config failed: %v", err)
 			}
@@ -191,7 +204,7 @@ func (s *rpcServer) ConnectWpaNetwork(ctx context.Context,
 			}, nil
 		}
 
-		if tries > 20 {
+		if tries > 5 {
 			break
 		}
 
