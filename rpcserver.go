@@ -182,11 +182,19 @@ func (s *rpcServer) ConnectWpaNetwork(ctx context.Context,
 			if err != nil {
 				log.Errorf("Listing configured networks failed: %v", err)
 			} else {
+				log.Infof("Got %v configured networks", len(configuredNetworks))
+
 				for _, configuredNetwork := range configuredNetworks {
+					if configuredNetwork.Id == net {
+						continue
+					}
+
 					err := wpa.RemoveNetwork("wlan0", configuredNetwork.Id)
 					if err != nil {
 						log.Warnf("Unable to remove configured network %v", configuredNetwork.Id)
 					}
+
+					log.Infof("Removed network %v=%v", configuredNetwork.Id, configuredNetwork.Ssid)
 				}
 			}
 
