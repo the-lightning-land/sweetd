@@ -6,6 +6,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/the-lightning-land/sweetd/ap"
 	"github.com/the-lightning-land/sweetd/machine"
+	"github.com/the-lightning-land/sweetd/pairing"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/sweetrpc"
 	"google.golang.org/grpc"
@@ -60,6 +61,11 @@ func sweetdMain() error {
 
 	// sweet.db persistently stores all dispenser configurations and settings
 	sweetDB, err := sweetdb.Open(cfg.DataDir)
+	if err != nil {
+		return errors.Errorf("Could not open sweet.db: %v", err)
+	}
+
+	log.Infof("Opened sweet.db")
 
 	// The network access point, which acts as the core connectivity
 	// provider for all other components
@@ -84,7 +90,12 @@ func sweetdMain() error {
 		log.Info("Created a mock access point.")
 	}
 
-	defer a.Stop()
+	defer func() {
+		err := a.Stop()
+		if err != nil {
+			log.Errorf("Could not properly shut down access point: %v", err)
+		}
+	}()
 
 	err = a.Start()
 	if err != nil {
@@ -112,6 +123,38 @@ func sweetdMain() error {
 		log.Warnf("Whoops, couldn't start hotspot: %v", err)
 	}
 
+	log.Infof("Creating pairing controller...")
+
+	// create subsystem responsible for pairing
+	pairingController, err := pairing.NewController(&pairing.Config{
+		Logger:      log.New().WithField("system", "pairing"),
+		AdapterId:   "hci0",
+		AccessPoint: a,
+	})
+	if err != nil {
+		return errors.Errorf("Could not create pairing controller: %v", err)
+	}
+
+	log.Infof("Created pairing controller")
+
+	log.Infof("Starting pairing controller...")
+
+	err = pairingController.Start()
+	if err != nil {
+		return errors.Errorf("Could not start pairing controller: %v", err)
+	}
+
+	log.Infof("Started pairing controller")
+
+	defer func() {
+		log.Infof("Stopping pairing controller...")
+
+		err := pairingController.Stop()
+		if err != nil {
+			log.Errorf("Could not properly shut down pairing controller: %v", err)
+		}
+	}()
+
 	// The hardware controller
 	var m machine.Machine
 
@@ -132,8 +175,6 @@ func sweetdMain() error {
 	default:
 		return errors.Errorf("Unknown machine type %v", cfg.Machine)
 	}
-
-	log.Infof("Opened sweet.db")
 
 	// central controller for everything the dispenser does
 	dispenser := newDispenser(&dispenserConfig{
@@ -170,11 +211,19 @@ func sweetdMain() error {
 				return errors.New("RPC server unable to listen on %s")
 			}
 
-			defer lis.Close()
+			defer func() {
+				err := lis.Close()
+				if err != nil {
+					log.Errorf("Could not properly close: %v", err)
+				}
+			}()
 
 			go func() {
 				log.Infof("RPC server listening on %s", lis.Addr())
-				grpcServer.Serve(lis)
+				err := grpcServer.Serve(lis)
+				if err != nil {
+					log.Errorf("Could not serve: %v", err)
+				}
 			}()
 		}
 	}
