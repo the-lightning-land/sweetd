@@ -8,7 +8,6 @@ import (
 	"github.com/muka/go-bluetooth/bluez/profile"
 	"github.com/muka/go-bluetooth/service"
 	"github.com/the-lightning-land/sweetd/ap"
-	"time"
 )
 
 const (
@@ -78,16 +77,10 @@ func NewController(config *Config) (*Controller, error) {
 		return nil, errors.Errorf("Failed to initialize app: %v", err)
 	}
 
-	controller.log.Infof("Created application")
-	time.Sleep(time.Second)
-
 	err = controller.app.Run()
 	if err != nil {
 		return nil, errors.Errorf("Failed to run: %v", err)
 	}
-
-	controller.log.Infof("Ran application")
-	time.Sleep(time.Second)
 
 	controller.service, err = controller.app.CreateService(&profile.GattService1Properties{
 		Primary: true,
@@ -97,16 +90,10 @@ func NewController(config *Config) (*Controller, error) {
 		return nil, errors.Errorf("Failed to create service: %v", err)
 	}
 
-	controller.log.Infof("Created service")
-	time.Sleep(time.Second)
-
 	err = controller.app.AddService(controller.service)
 	if err != nil {
 		return nil, errors.Errorf("Failed to add service: %v", err)
 	}
-
-	controller.log.Infof("Added service")
-	time.Sleep(time.Second)
 
 	controller.characteristics = &Characteristics{}
 
@@ -147,7 +134,34 @@ func NewController(config *Config) (*Controller, error) {
 	return controller, nil
 }
 
+func (c *Controller) handleRead(app *service.Application, serviceUuid string, charUuid string) ([]byte, error) {
+	c.log.Infof("Reading %v", charUuid)
+	return []byte("ewfewf"), nil
+}
+
+func (c *Controller) handleWrite(app *service.Application, serviceUuid string, charUuid string, value []byte) error {
+	c.log.Infof("Writing %v = %v", charUuid, value)
+	return nil
+}
+
 func (c *Controller) Start() error {
+	// adapterID := 0
+
+	//mgmt := btmgmt.NewBtMgmt(c.adapterId)
+	//err := mgmt.Reset()
+	//if err != nil {
+	//	return errors.Errorf("Reset %s: %v", c.adapterId, err)
+	//}
+	//
+	//time.Sleep(time.Millisecond * 500)
+
+	//err = linux.Up(adapterID)
+	//if err != nil {
+	//	return errors.Errorf("Failed to start device hci%d: %v", adapterID, err)
+	//}
+	//
+	//c.log.Infof("Upped")
+
 	gattManager, err := api.GetGattManager(c.adapterId)
 	if err != nil {
 		return errors.Errorf("Get gatt manager failed: %v", err)
@@ -163,7 +177,34 @@ func (c *Controller) Start() error {
 		return errors.Errorf("Failed to advertise: %v", err)
 	}
 
-	c.log.Infof("Started advertising")
+	//api.On("data", emitter.NewCallback(func(ev emitter.Event) {
+	//	print(ev.GetData())
+	//	print(ev.GetName())
+	//}))
+
+	// TODO: where to move this?
+	//err = api.On("data", emitter.NewCallback(func(ev emitter.Event) {
+	//	print(ev.GetData())
+	//	print(ev.GetName())
+	//}))
+	//if err != nil {
+	//	c.log.Errorf("Could not subscribe: %v", err)
+	//}
+	//
+	//err = c.characteristics.getName.StartNotify()
+	//if err != nil {
+	//	c.log.Errorf("Could not notify: %v", err)
+	//}
+
+	//ticker := time.NewTicker(5 * time.Second)
+	//for {
+	//	select {
+	//	case <-ticker.C:
+	//		val, err := c.characteristics.getName.ReadValue(map[string]interface{}{})
+	//		c.log.Infof("Value is: %s", val)
+	//		print(err)
+	//	}
+	//}
 
 	return nil
 }
