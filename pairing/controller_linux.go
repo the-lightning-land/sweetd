@@ -11,20 +11,21 @@ import (
 )
 
 const (
+	uuidSuffix                    = "75dd-4a0e-b688-66b7df342cc6"
 	objectName                    = "org.bluez"
 	objectPath                    = dbus.ObjectPath("/sweet/pairing/service")
 	localName                     = "Candy"
-	advertisedOptional            = false
-	deviceUuid                    = "3e2194ca-0eb4-4f9b-917d-4fa52d65d3c2"
-	serviceUuid                   = "09e1cdf3-f1a8-4bd0-9451-d6abc007a660"
-	getNameCharacteristicUuid     = "ce2cba89-75dd-4a0e-b688-66b7df342cc6"
-	getSerialNoCharacteristicUuid = "ebde779d-0fe9-4f84-ba47-07080b8356ea"
-	getIpCharacteristicUuid       = "5abdac9d-7643-4fad-9ff9-2fbfc2d52edd"
-	getWifiSsidCharacteristicUuid = "cb912938-d3cc-4524-85c8-4839f7b544cb"
-	scanWifiCharacteristicUuid    = "718d3f42-f9b1-48bd-9ac1-34b35e66afa9"
-	setWifiSsidCharacteristicUuid = "982c536f-3610-4234-8a3a-b55194a4a188"
-	setWifiPskCharacteristicUuid  = "b765a814-ed6b-4a1e-85ab-3ec3a343c2d2"
-	connectWifiCharacteristicUuid = "4960b1e2-0bb8-4c7a-a560-9f5172bb7e25"
+	advertisedOptional            = true
+	uuid                          = "AAAA"
+	serviceUuid                   = "1111"
+	getNameCharacteristicUuid     = "1111"
+	getSerialNoCharacteristicUuid = "2222"
+	getIpCharacteristicUuid       = "3333"
+	getWifiSsidCharacteristicUuid = "4444"
+	scanWifiCharacteristicUuid    = "5555"
+	setWifiSsidCharacteristicUuid = "6666"
+	setWifiPskCharacteristicUuid  = "7777"
+	connectWifiCharacteristicUuid = "8888"
 )
 
 type Characteristics struct {
@@ -65,13 +66,13 @@ func NewController(config *Config) (*Controller, error) {
 	var err error
 
 	controller.app, err = service.NewApplication(&service.ApplicationConfig{
-		UUIDSuffix: "-0000-1000-8000-00805F9B34FB",
-		UUID:       "1235",
+		UUIDSuffix: uuidSuffix,
+		UUID:       uuid,
 		ObjectName: objectName,
 		ObjectPath: objectPath,
 		LocalName:  localName,
-		//ReadFunc:   controller.handleRead,
-		//WriteFunc:  controller.handleWrite,
+		ReadFunc:   controller.handleRead,
+		WriteFunc:  controller.handleWrite,
 	})
 	if err != nil {
 		return nil, errors.Errorf("Failed to initialize app: %v", err)
@@ -84,7 +85,7 @@ func NewController(config *Config) (*Controller, error) {
 
 	controller.service, err = controller.app.CreateService(&profile.GattService1Properties{
 		Primary: true,
-		UUID:    controller.app.GenerateUUID("4444"),
+		UUID:    serviceUuid,
 	}, advertisedOptional)
 	if err != nil {
 		return nil, errors.Errorf("Failed to create service: %v", err)
@@ -98,12 +99,11 @@ func NewController(config *Config) (*Controller, error) {
 	controller.characteristics = &Characteristics{}
 
 	controller.characteristics.getName, err = controller.service.CreateCharacteristic(&profile.GattCharacteristic1Properties{
-		UUID:      controller.app.GenerateUUID("4444"),
+		UUID: getNameCharacteristicUuid,
 		// Notifying: true,
 		Flags: []string{
 			bluez.FlagCharacteristicRead,
 			bluez.FlagCharacteristicWrite,
-			bluez.FlagCharacteristicNotify,
 		},
 	})
 	if err != nil {
@@ -116,7 +116,7 @@ func NewController(config *Config) (*Controller, error) {
 	}
 
 	desc, err := controller.characteristics.getName.CreateDescriptor(&profile.GattDescriptor1Properties{
-		UUID: controller.app.GenerateUUID("4444"),
+		UUID: getNameCharacteristicUuid,
 		Flags: []string{
 			bluez.FlagDescriptorRead,
 			bluez.FlagDescriptorWrite,
