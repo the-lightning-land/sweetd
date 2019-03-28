@@ -1,6 +1,7 @@
 package pairing
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/go-errors/errors"
 	"github.com/muka/go-bluetooth/api"
@@ -39,6 +40,8 @@ type Controller struct {
 	accessPoint ap.Ap
 	app         *service.Application
 	service     *service.GattService1
+	ssid        string
+	psk         string
 }
 
 func NewController(config *Config) (*Controller, error) {
@@ -143,12 +146,32 @@ func (c *Controller) Stop() error {
 
 func (c *Controller) readNetworkAvailabilityStatus() ([]byte, error) {
 	c.log.Infof("Reading network availability...")
-	return []byte{0}, nil
-}
+
+	status, err := c.accessPoint.GetConnectionStatus()
+	if err != nil {
+		return nil, errors.Errorf("Could not get wifi status: %v", err)
+	}
+
+	var connected uint8
+
+	if status.State == "COMPLETED" {
+		connected = 1
+	} else {
+		connected = 0
+	}
+
+	return []byte{connected}, nil
+}s
 
 func (c *Controller) readIpAddress() ([]byte, error) {
 	c.log.Infof("Reading ip address...")
-	return []byte("192.168.1.120"), nil
+
+	status, err := c.accessPoint.GetConnectionStatus()
+	if err != nil {
+		return nil, errors.Errorf("Could not get wifi status: %v", err)
+	}
+
+	return []byte(status.Ip), nil
 }
 
 type WifiScanListItem struct {
@@ -163,7 +186,7 @@ func (c *Controller) readWifiScanList() ([]byte, error) {
 		return nil, errors.Errorf("Could not get wifi scan list: %v", err)
 	}
 
-	wifiScanList := []*WifiScanListItem{}
+	wifiScanList := []*WifiScanListItem{} // Use literal instead of declaration so it serializes into empty json array
 	for _, net := range networks {
 		wifiScanList = append(wifiScanList, &WifiScanListItem{
 			Ssid: net.Ssid,
@@ -180,20 +203,40 @@ func (c *Controller) readWifiScanList() ([]byte, error) {
 
 func (c *Controller) readWifiSsidString() ([]byte, error) {
 	c.log.Infof("Reading wifi ssid...")
-	return []byte("onion"), nil
+
+	status, err := c.accessPoint.GetConnectionStatus()
+	if err != nil {
+		return nil, errors.Errorf("Could not get wifi status: %v", err)
+	}
+
+	return []byte(status.Ssid), nil
 }
 
 func (c *Controller) writeWifiSsidString(value []byte) error {
 	c.log.Infof("Writing wifi ssid to %v", value)
+
+	c.ssid = string(value)
+
 	return nil
 }
 
 func (c *Controller) writeWifiPskString(value []byte) error {
 	c.log.Infof("Writing wifi psk")
+
+	c.psk = string(value)
+
 	return nil
 }
 
 func (c *Controller) writeWifiConnectSignal(value []byte) error {
 	c.log.Infof("Writing wifi connect signal to %v", value)
+
+	if bytes.Equal(value, []byte{1}) {
+		err := c.accessPoint.ConnectWifi(c.ssid, c.psk)
+		if err != nil {
+			return errors.Errorf("Could not connect to wifi: %v", err)
+		}
+	}
+
 	return nil
 }
