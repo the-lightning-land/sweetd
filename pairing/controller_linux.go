@@ -20,9 +20,11 @@ const (
 	// Local name of the application
 	localName = "Candy"
 
-	// Device and service UUIDs
-	uuid        = "AAAA"
-	serviceUuid = "1111"
+	// Device UUID
+	uuid = "CA00"
+
+	// Candy service UUID
+	candyServiceUuid = "CA00"
 
 	// Name of the device
 	// utf8s
@@ -87,7 +89,7 @@ func NewController(config *Config) (*Controller, error) {
 	var err error
 
 	app := GattApp(uuidSuffix, uuid, objectName, objectPath, localName)
-	service := app.Service(Primary, serviceUuid, Advertised)
+	service := app.Service(Primary, candyServiceUuid, Advertised)
 
 	service.Characteristic(deviceNameString, controller.readDeviceNameString, nil)
 	service.Characteristic(manufacturerNameString, controller.readManufacturerNameString, nil)
@@ -156,45 +158,56 @@ func (c *Controller) Stop() error {
 }
 
 func (c *Controller) readDeviceNameString() ([]byte, error) {
-	return []byte(""), nil
+	c.log.Infof("Reading device name...")
+	return []byte("Candy"), nil
 }
 
 func (c *Controller) readManufacturerNameString() ([]byte, error) {
-	return []byte(""), nil
+	c.log.Infof("Reading manufacturer name...")
+	return []byte("The Lightning Land"), nil
 }
 
 func (c *Controller) readSerialNumberString() ([]byte, error) {
-	return []byte(""), nil
+	c.log.Infof("Reading serial number...")
+	return []byte("100000"), nil
 }
 
 func (c *Controller) readModelNumberString() ([]byte, error) {
-	return []byte(""), nil
+	c.log.Infof("Reading model number...")
+	return []byte("moon"), nil
 }
 
 func (c *Controller) readNetworkAvailabilityStatus() ([]byte, error) {
-	return []byte(""), nil
+	c.log.Infof("Reading network availability...")
+	return []byte{0}, nil
 }
 
 func (c *Controller) readIpAddress() ([]byte, error) {
-	return []byte(""), nil
+	c.log.Infof("Reading ip address...")
+	return []byte("192.168.1.120"), nil
 }
 
 func (c *Controller) readWifiScanList() ([]byte, error) {
-	return []byte(""), nil
+	c.log.Infof("Reading wifi scan list...")
+	return []byte("[{}, {}, {}]"), nil
 }
 
 func (c *Controller) readWifiSsidString() ([]byte, error) {
-	return []byte(""), nil
+	c.log.Infof("Reading wifi ssid...")
+	return []byte("onion"), nil
 }
 
-func (c *Controller) writeWifiSsidString([]byte) error {
+func (c *Controller) writeWifiSsidString(value []byte) error {
+	c.log.Infof("Writing wifi ssid to %v", value)
 	return nil
 }
 
-func (c *Controller) writeWifiPskString([]byte) error {
+func (c *Controller) writeWifiPskString(value []byte) error {
+	c.log.Infof("Writing wifi psk")
 	return nil
 }
 
-func (c *Controller) writeWifiConnectSignal([]byte) error {
+func (c *Controller) writeWifiConnectSignal(value []byte) error {
+	c.log.Infof("Writing wifi connect signal to %v", value)
 	return nil
 }

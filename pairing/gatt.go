@@ -61,17 +61,20 @@ func GattApp(uuidSuffix string, uuid string, objectName string, objectPath strin
 	return a
 }
 
-func (a *gattApp) handleRead(app *service.Application, serviceUuid string, charUuid string) ([]byte, error) {
-	switch charUuid {
-	case deviceNameString:
-		return []byte(localName), nil
+func (a *gattApp) handleRead(app *service.Application, serviceUuid string, characteristicUuid string) ([]byte, error) {
+	if readHandler, ok := a.readHandlers[characteristicUuid]; ok {
+		return readHandler()
 	}
 
-	return []byte(""), nil
+	return nil, errors.Errorf("No read handler found in service %v for characteristic %v", serviceUuid, characteristicUuid)
 }
 
-func (a *gattApp) handleWrite(app *service.Application, serviceUuid string, charUuid string, value []byte) error {
-	return nil
+func (a *gattApp) handleWrite(app *service.Application, serviceUuid string, characteristicUuid string, value []byte) error {
+	if writeHandler, ok := a.writeHandlers[characteristicUuid]; ok {
+		return writeHandler(value)
+	}
+
+	return errors.Errorf("No write handler found in service %v for characteristic %v", serviceUuid, characteristicUuid)
 }
 
 func (a *gattApp) Run() (*service.Application, error) {
@@ -94,7 +97,7 @@ func (a *gattApp) Service(primaryType PrimaryType, uuid string, advertised Adver
 
 	svc, err := a.app.CreateService(&profile.GattService1Properties{
 		Primary: bool(primaryType),
-		UUID:    uuid,
+		UUID:    a.app.GenerateUUID(uuid),
 	}, bool(advertised))
 
 	if err != nil {
@@ -119,24 +122,26 @@ func (s *gattService) Characteristic(uuid string, read HandleRead, write HandleW
 		return s
 	}
 
+	characteristicUuid := s.app.GenerateUUID(uuid)
+
 	var inferredFlags []string
 
 	if read != nil {
 		inferredFlags = append(inferredFlags, bluez.FlagCharacteristicRead)
 
 		// TODO: Mapping by characteristic UUID only makes this work for one service
-		s.readHandlers[uuid] = read
+		s.readHandlers[characteristicUuid] = read
 	}
 
 	if write != nil {
 		inferredFlags = append(inferredFlags, bluez.FlagCharacteristicWrite)
 
 		// TODO: Mapping by characteristic UUID only makes this work for one service
-		s.writeHandlers[uuid] = write
+		s.writeHandlers[characteristicUuid] = write
 	}
 
 	characteristic, err := s.service.CreateCharacteristic(&profile.GattCharacteristic1Properties{
-		UUID:  s.app.GenerateUUID(uuid),
+		UUID:  characteristicUuid,
 		Flags: inferredFlags,
 	})
 
