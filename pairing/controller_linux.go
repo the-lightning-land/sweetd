@@ -1,6 +1,7 @@
 package pairing
 
 import (
+	"encoding/json"
 	"github.com/go-errors/errors"
 	"github.com/muka/go-bluetooth/api"
 	"github.com/muka/go-bluetooth/linux/btmgmt"
@@ -150,9 +151,31 @@ func (c *Controller) readIpAddress() ([]byte, error) {
 	return []byte("192.168.1.120"), nil
 }
 
+type WifiScanListItem struct {
+	Ssid string `json:"ssid"`
+}
+
 func (c *Controller) readWifiScanList() ([]byte, error) {
 	c.log.Infof("Reading wifi scan list...")
-	return []byte("[{}, {}, {}]"), nil
+
+	networks, err := c.accessPoint.ListWifiNetworks()
+	if err != nil {
+		return nil, errors.Errorf("Could not get wifi scan list: %v", err)
+	}
+
+	var wifiScanList []*WifiScanListItem
+	for _, net := range networks {
+		wifiScanList = append(wifiScanList, &WifiScanListItem{
+			Ssid: net.Ssid,
+		})
+	}
+
+	payload, err := json.Marshal(wifiScanList)
+	if err != nil {
+		return nil, errors.Errorf("Could not serialize wifi scan list: %v", err)
+	}
+
+	return payload, nil
 }
 
 func (c *Controller) readWifiSsidString() ([]byte, error) {

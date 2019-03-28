@@ -108,6 +108,10 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davidknezic/go-bluetooth v0.0.0-20190328202814-b3b55ed4237e h1:mtqIuSWvHgPxZ7Cw4LwubF0acBPjyjEwJ/F3M3U/OIQ=
 github.com/davidknezic/go-bluetooth v0.0.0-20190328202814-b3b55ed4237e/go.mod h1:tbUgXz7VZqw14AD1gArXW8wcVQtfGWBZAIhyMziuTck=
+github.com/davidknezic/go-bluetooth v0.0.0-20190328205643-2cbed42b74a2 h1:McRu+OWkj8/sovtLGJrjuO4sdcdHVe5cvgets36U70U=
+github.com/davidknezic/go-bluetooth v0.0.0-20190328205643-2cbed42b74a2/go.mod h1:tbUgXz7VZqw14AD1gArXW8wcVQtfGWBZAIhyMziuTck=
+github.com/davidknezic/go-bluetooth v0.0.0-20190328210424-e60e37bbe516 h1:z4BTVSioXBxhMcu7TvZ3FjLc9rpU/LKzypXmGLEw9po=
+github.com/davidknezic/go-bluetooth v0.0.0-20190328210424-e60e37bbe516/go.mod h1:tbUgXz7VZqw14AD1gArXW8wcVQtfGWBZAIhyMziuTck=
 github.com/dustin/go-humanize v1.0.0/go.mod h1:HtrtbFcZ19U5GC7JDqmcUSB87Iq5E25KnS6fMYU6eOk=
 github.com/eapache/go-resiliency v1.1.0/go.mod h1:kFI+JgMyC7bLPUVY133qvEBtVayf5mFgVsvEsIPBvNs=
 github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21/go.mod h1:+020luEh2TKB4/GOp8oxxtq0Daoen/Cii55CzbTV6DU=

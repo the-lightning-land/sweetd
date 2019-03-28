@@ -87,4 +87,4 @@ require (
 
 replace github.com/golang/lint => github.com/golang/lint v0.0.0-20190227174305-8f45f776aaf1
 
-replace github.com/muka/go-bluetooth => github.com/davidknezic/go-bluetooth v0.0.0-20190328202814-b3b55ed4237e
+replace github.com/muka/go-bluetooth => github.com/davidknezic/go-bluetooth v0.0.0-20190328210424-e60e37bbe516

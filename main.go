@@ -90,17 +90,17 @@ func sweetdMain() error {
 		log.Info("Created a mock access point.")
 	}
 
+	err = a.Start()
+	if err != nil {
+		return errors.Errorf("Could not start access point: %v", err)
+	}
+
 	defer func() {
 		err := a.Stop()
 		if err != nil {
 			log.Errorf("Could not properly shut down access point: %v", err)
 		}
 	}()
-
-	err = a.Start()
-	if err != nil {
-		return errors.Errorf("Could not start access point: %v", err)
-	}
 
 	wifiConnection, err := sweetDB.GetWifiConnection()
 	if err != nil {

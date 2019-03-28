@@ -19,7 +19,7 @@ func (a *MockAp) StartHotspot() error {
 }
 
 func (a *MockAp) ListWifiNetworks() ([]*Network, error) {
-	empty := make([]*Network, 0)
+	var empty []*Network
 	return empty, nil
 }
 
