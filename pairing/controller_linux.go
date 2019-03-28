@@ -13,6 +13,9 @@ const (
 	// Unique UUID suffix for the candy dispenser
 	uuidSuffix = "-75dd-4a0e-b688-66b7df342cc6"
 
+	// Prefix of the candy service UUID
+	candyServiceUuidPrefix = "CA00"
+
 	// Where to expose the application
 	objectName = "org.bluez"
 	objectPath = "/sweet/pairing/service"
@@ -20,47 +23,13 @@ const (
 	// Local name of the application
 	localName = "Candy"
 
-	// Device UUID
-	uuid = "CA00"
-
-	// Candy service UUID
-	candyServiceUuid = "CA00"
-
-	// Name of the device
-	// utf8s
-	deviceNameString = "2A00"
-
-	// The value of this characteristic is a UTF-8 string
-	// representing the name of the manufacturer of the device.
-	// utf8s
-	manufacturerNameString = "2A29"
-
-	// The value of this characteristic is a variable-length UTF-8 string
-	// representing the serial number for a particular instance of the device.
-	// utf8s
-	serialNumberString = "2A25"
-
-	// The value of this characteristic is a UTF-8 string
-	// representing the model number assigned by the device vendor.
-	// utf8s
-	modelNumberString = "2A24"
-
-	// The Network Availability characteristic represents
-	// if network is available or not available.
-	// uint8
-	// 0 No network available
-	// 1 One or more networks available
-	networkAvailabilityStatus = "2A3E"
-
-	ipAddress = "CA01"
-
-	wifiScanList = "CA02"
-
-	wifiSsidString = "CA03"
-
-	wifiPskString = "CA04"
-
-	wifiConnectSignal = "CA05"
+	candyServiceUuid          = candyServiceUuidPrefix + "0000" + uuidSuffix
+	networkAvailabilityStatus = candyServiceUuidPrefix + "CA01" + uuidSuffix
+	ipAddress                 = candyServiceUuidPrefix + "CA02" + uuidSuffix
+	wifiScanList              = candyServiceUuidPrefix + "CA03" + uuidSuffix
+	wifiSsidString            = candyServiceUuidPrefix + "CA04" + uuidSuffix
+	wifiPskString             = candyServiceUuidPrefix + "CA05" + uuidSuffix
+	wifiConnectSignal         = candyServiceUuidPrefix + "CA06" + uuidSuffix
 )
 
 type Controller struct {
@@ -88,19 +57,33 @@ func NewController(config *Config) (*Controller, error) {
 
 	var err error
 
-	app := GattApp(uuidSuffix, uuid, objectName, objectPath, localName)
+	app := GattApp(objectName, objectPath, localName)
 	service := app.Service(Primary, candyServiceUuid, Advertised)
 
-	service.Characteristic(deviceNameString, controller.readDeviceNameString, nil)
-	service.Characteristic(manufacturerNameString, controller.readManufacturerNameString, nil)
-	service.Characteristic(serialNumberString, controller.readSerialNumberString, nil)
-	service.Characteristic(modelNumberString, controller.readModelNumberString, nil)
-	service.Characteristic(networkAvailabilityStatus, controller.readNetworkAvailabilityStatus, nil)
-	service.Characteristic(ipAddress, controller.readIpAddress, nil)
-	service.Characteristic(wifiScanList, controller.readWifiScanList, nil)
-	service.Characteristic(wifiSsidString, controller.readWifiSsidString, controller.writeWifiSsidString)
-	service.Characteristic(wifiPskString, nil, controller.writeWifiPskString)
-	service.Characteristic(wifiConnectSignal, nil, controller.writeWifiConnectSignal)
+	service.DeviceNameCharacteristic("Candy").
+		UserDescriptionDescriptor("Device Name").
+		PresentationDescriptor()
+	service.ManufacturerNameCharacteristic("The Lightning Land").
+		UserDescriptionDescriptor("Manufacturer Name").
+		PresentationDescriptor()
+	service.SerialNumberCharacteristic("123456789").
+		UserDescriptionDescriptor("Serial Number").
+		PresentationDescriptor()
+	service.ModelNumberCharacteristic("moon").
+		UserDescriptionDescriptor("Model Number").
+		PresentationDescriptor()
+	service.Characteristic(networkAvailabilityStatus, controller.readNetworkAvailabilityStatus, nil).
+		UserDescriptionDescriptor("Network Availability Status")
+	service.Characteristic(ipAddress, controller.readIpAddress, nil).
+		UserDescriptionDescriptor("IP Address")
+	service.Characteristic(wifiScanList, controller.readWifiScanList, nil).
+		UserDescriptionDescriptor("Wi-Fi Scan List")
+	service.Characteristic(wifiSsidString, controller.readWifiSsidString, controller.writeWifiSsidString).
+		UserDescriptionDescriptor("Wi-Fi SSID")
+	service.Characteristic(wifiPskString, nil, controller.writeWifiPskString).
+		UserDescriptionDescriptor("Wi-Fi PSK")
+	service.Characteristic(wifiConnectSignal, nil, controller.writeWifiConnectSignal).
+		UserDescriptionDescriptor("Wi-Fi Connect Signal")
 
 	controller.app, err = app.Run()
 	if err != nil {
@@ -155,26 +138,6 @@ func (c *Controller) Stop() error {
 	}
 
 	return nil
-}
-
-func (c *Controller) readDeviceNameString() ([]byte, error) {
-	c.log.Infof("Reading device name...")
-	return []byte("Candy"), nil
-}
-
-func (c *Controller) readManufacturerNameString() ([]byte, error) {
-	c.log.Infof("Reading manufacturer name...")
-	return []byte("The Lightning Land"), nil
-}
-
-func (c *Controller) readSerialNumberString() ([]byte, error) {
-	c.log.Infof("Reading serial number...")
-	return []byte("100000"), nil
-}
-
-func (c *Controller) readModelNumberString() ([]byte, error) {
-	c.log.Infof("Reading model number...")
-	return []byte("moon"), nil
 }
 
 func (c *Controller) readNetworkAvailabilityStatus() ([]byte, error) {

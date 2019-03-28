@@ -36,7 +36,12 @@ type gattService struct {
 	service *service.GattService1
 }
 
-func GattApp(uuidSuffix string, uuid string, objectName string, objectPath string, localName string) *gattApp {
+type gattCharacteristic struct {
+	*gattService
+	characteristic *service.GattCharacteristic1
+}
+
+func GattApp(objectName string, objectPath string, localName string) *gattApp {
 	a := &gattApp{}
 	var err error
 
@@ -44,8 +49,6 @@ func GattApp(uuidSuffix string, uuid string, objectName string, objectPath strin
 	a.writeHandlers = make(map[string]HandleWrite)
 
 	a.app, err = service.NewApplication(&service.ApplicationConfig{
-		UUIDSuffix: uuidSuffix,
-		UUID:       uuid,
 		ObjectName: objectName,
 		ObjectPath: dbus.ObjectPath(objectPath),
 		LocalName:  localName,
@@ -66,7 +69,7 @@ func (a *gattApp) handleRead(app *service.Application, serviceUuid string, chara
 		return readHandler()
 	}
 
-	return nil, errors.Errorf("No read handler found in service %v for characteristic %v", serviceUuid, characteristicUuid)
+	return nil, service.NewCallbackError(service.CallbackNotRegistered, "")
 }
 
 func (a *gattApp) handleWrite(app *service.Application, serviceUuid string, characteristicUuid string, value []byte) error {
@@ -74,7 +77,7 @@ func (a *gattApp) handleWrite(app *service.Application, serviceUuid string, char
 		return writeHandler(value)
 	}
 
-	return errors.Errorf("No write handler found in service %v for characteristic %v", serviceUuid, characteristicUuid)
+	return service.NewCallbackError(service.CallbackNotRegistered, "")
 }
 
 func (a *gattApp) Run() (*service.Application, error) {
@@ -97,7 +100,7 @@ func (a *gattApp) Service(primaryType PrimaryType, uuid string, advertised Adver
 
 	svc, err := a.app.CreateService(&profile.GattService1Properties{
 		Primary: bool(primaryType),
-		UUID:    a.app.GenerateUUID(uuid),
+		UUID:    uuid,
 	}, bool(advertised))
 
 	if err != nil {
@@ -117,44 +120,103 @@ func (a *gattApp) Service(primaryType PrimaryType, uuid string, advertised Adver
 	}
 }
 
-func (s *gattService) Characteristic(uuid string, read HandleRead, write HandleWrite) *gattService {
-	if s.err != nil {
-		return s
-	}
+func (s *gattService) DeviceNameCharacteristic(value string) *gattCharacteristic {
+	return s.characteristic("2A00", []byte(value), nil, nil)
+}
 
-	characteristicUuid := s.app.GenerateUUID(uuid)
+func (s *gattService) ManufacturerNameCharacteristic(value string) *gattCharacteristic {
+	return s.characteristic("2A29", []byte(value), nil, nil)
+}
+
+func (s *gattService) SerialNumberCharacteristic(value string) *gattCharacteristic {
+	return s.characteristic("2A25", []byte(value), nil, nil)
+}
+
+func (s *gattService) ModelNumberCharacteristic(value string) *gattCharacteristic {
+	return s.characteristic("2A24", []byte(value), nil, nil)
+}
+
+func (s *gattService) Characteristic(uuid string, read HandleRead, write HandleWrite) *gattCharacteristic {
+	return s.characteristic(uuid, nil, read, write)
+}
+
+func (s *gattService) characteristic(uuid string, value []byte, read HandleRead, write HandleWrite) *gattCharacteristic {
+	if s.err != nil {
+		return &gattCharacteristic{gattService: s}
+	}
 
 	var inferredFlags []string
 
-	if read != nil {
+	if read != nil || value != nil {
 		inferredFlags = append(inferredFlags, bluez.FlagCharacteristicRead)
+	}
 
+	if read != nil {
 		// TODO: Mapping by characteristic UUID only makes this work for one service
-		s.readHandlers[characteristicUuid] = read
+		s.readHandlers[uuid] = read
 	}
 
 	if write != nil {
 		inferredFlags = append(inferredFlags, bluez.FlagCharacteristicWrite)
 
 		// TODO: Mapping by characteristic UUID only makes this work for one service
-		s.writeHandlers[characteristicUuid] = write
+		s.writeHandlers[uuid] = write
 	}
 
 	characteristic, err := s.service.CreateCharacteristic(&profile.GattCharacteristic1Properties{
-		UUID:  characteristicUuid,
+		UUID:  uuid,
+		Value: value,
 		Flags: inferredFlags,
 	})
 
 	if err != nil {
 		s.err = errors.Errorf("Failed to create characteristic: %v", err)
-		return s
+		return &gattCharacteristic{gattService: s}
 	}
 
 	err = s.service.AddCharacteristic(characteristic)
 	if err != nil {
 		s.err = errors.Errorf("Failed to add characteristic: %v", err)
-		return s
+		return &gattCharacteristic{gattService: s}
 	}
 
-	return s
+	return &gattCharacteristic{
+		gattService:    s,
+		characteristic: characteristic,
+	}
+}
+
+func (c *gattCharacteristic) UserDescriptionDescriptor(value string) *gattCharacteristic {
+	return c.descriptor("2901", []byte(value))
+}
+
+func (c *gattCharacteristic) PresentationDescriptor() *gattCharacteristic {
+	return c.descriptor("2904", []byte{25})
+}
+
+func (c *gattCharacteristic) descriptor(uuid string, value []byte) *gattCharacteristic {
+	if c.err != nil {
+		return c
+	}
+
+	descriptor, err := c.characteristic.CreateDescriptor(&profile.GattDescriptor1Properties{
+		UUID:  uuid,
+		Value: value,
+		Flags: []string{
+			bluez.FlagDescriptorRead,
+		},
+	})
+
+	if err != nil {
+		c.err = errors.Errorf("Failed to create descriptor: %v", err)
+		return c
+	}
+
+	err = c.characteristic.AddDescriptor(descriptor)
+	if err != nil {
+		c.err = errors.Errorf("Failed to add descriptor: %v", err)
+		return c
+	}
+
+	return c
 }
