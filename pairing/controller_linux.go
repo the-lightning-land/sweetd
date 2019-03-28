@@ -163,7 +163,7 @@ func (c *Controller) readWifiScanList() ([]byte, error) {
 		return nil, errors.Errorf("Could not get wifi scan list: %v", err)
 	}
 
-	var wifiScanList []*WifiScanListItem
+	wifiScanList := []*WifiScanListItem{}
 	for _, net := range networks {
 		wifiScanList = append(wifiScanList, &WifiScanListItem{
 			Ssid: net.Ssid,
