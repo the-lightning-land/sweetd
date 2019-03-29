@@ -9,6 +9,7 @@ import (
 	"github.com/muka/go-bluetooth/service"
 	"github.com/the-lightning-land/sweetd/ap"
 	"time"
+	"strings"
 )
 
 const (
@@ -213,17 +214,22 @@ func (c *Controller) readWifiSsidString() ([]byte, error) {
 }
 
 func (c *Controller) writeWifiSsidString(value []byte) error {
-	c.log.Infof("Writing wifi ssid to %v", value)
+	ssid := string(value)
 
-	c.ssid = string(value)
+	c.log.Infof("Writing wifi ssid to %v", ssid)
+
+	c.ssid = ssid
 
 	return nil
 }
 
 func (c *Controller) writeWifiPskString(value []byte) error {
-	c.log.Infof("Writing wifi psk")
+	psk := string(value)
+	stars := strings.Repeat("*", len(psk))
 
-	c.psk = string(value)
+	c.log.Infof("Writing wifi psk to %v", stars)
+
+	c.psk = psk
 
 	return nil
 }
