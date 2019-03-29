@@ -20,7 +20,7 @@ const (
 	candyServiceUuidPrefix = "CA00"
 
 	// Where to expose the application
-	objectName = "org.bluez"
+	objectName = "land.lightning"
 	objectPath = "/sweet/pairing/service"
 
 	// Local name of the application
