@@ -162,7 +162,7 @@ func (c *Controller) readNetworkAvailabilityStatus() ([]byte, error) {
 	}
 
 	return []byte{connected}, nil
-}s
+}
 
 func (c *Controller) readIpAddress() ([]byte, error) {
 	c.log.Infof("Reading ip address...")
