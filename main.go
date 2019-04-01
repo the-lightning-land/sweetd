@@ -5,6 +5,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/the-lightning-land/sweetd/ap"
+	"github.com/the-lightning-land/sweetd/dispenser"
 	"github.com/the-lightning-land/sweetd/machine"
 	"github.com/the-lightning-land/sweetd/pairing"
 	"github.com/the-lightning-land/sweetd/sweetdb"
@@ -71,23 +72,19 @@ func sweetdMain() error {
 	// provider for all other components
 	var a ap.Ap
 
-	if cfg.RunAp {
+	switch cfg.Net {
+	case "dispenser":
 		a, err = ap.NewDispenserAp(&ap.DispenserApConfig{
 			Interface: "wlan0",
-			Hotspot: &ap.DispenserApHotspotConfig{
-				Interface:  cfg.Ap.Interface,
-				Ip:         cfg.Ap.Ip,
-				DhcpRange:  cfg.Ap.DhcpRange,
-				Ssid:       cfg.Ap.Ssid,
-				Passphrase: cfg.Ap.Passphrase,
-			},
 		})
 
 		log.Info("Created Candy Dispenser access point.")
-	} else {
+	case "mock":
 		a = ap.NewMockAp()
 
 		log.Info("Created a mock access point.")
+	default:
+		return errors.Errorf("Unknown networking type %v", cfg.Machine)
 	}
 
 	err = a.Start()
@@ -118,10 +115,36 @@ func sweetdMain() error {
 		log.Infof("No saved Wifi connection available. Not connecting.")
 	}
 
-	err = a.StartHotspot()
-	if err != nil {
-		log.Warnf("Whoops, couldn't start hotspot: %v", err)
+	// The hardware controller
+	var m machine.Machine
+
+	switch cfg.Machine {
+	case "raspberry":
+		m = machine.NewDispenserMachine(&machine.DispenserMachineConfig{
+			TouchPin:  cfg.Raspberry.TouchPin,
+			MotorPin:  cfg.Raspberry.MotorPin,
+			BuzzerPin: cfg.Raspberry.BuzzerPin,
+		})
+
+		log.Infof("Created Raspberry Pi machine on touch pin %v, motor pin %v and buzzer pin %v.",
+			cfg.Raspberry.TouchPin, cfg.Raspberry.MotorPin, cfg.Raspberry.BuzzerPin)
+	case "mock":
+		m = machine.NewMockMachine(cfg.Mock.Listen)
+
+		log.Info("Created a mock machine.")
+	default:
+		return errors.Errorf("Unknown machine type %v", cfg.Machine)
 	}
+
+	// central controller for everything the dispenser does
+	dispenser := dispenser.NewDispenser(&dispenser.Config{
+		Machine:     m,
+		AccessPoint: a,
+		DB:          sweetDB,
+		MemoPrefix:  cfg.MemoPrefix,
+	})
+
+	log.Infof("Created dispenser.")
 
 	log.Infof("Creating pairing controller...")
 
@@ -130,6 +153,7 @@ func sweetdMain() error {
 		Logger:      log.New().WithField("system", "pairing"),
 		AdapterId:   "hci0",
 		AccessPoint: a,
+		Dispenser:   dispenser,
 	})
 	if err != nil {
 		return errors.Errorf("Could not create pairing controller: %v", err)
@@ -153,47 +177,6 @@ func sweetdMain() error {
 		if err != nil {
 			log.Errorf("Could not properly shut down pairing controller: %v", err)
 		}
-	}()
-
-	// The hardware controller
-	var m machine.Machine
-
-	switch cfg.Machine {
-	case "raspberry":
-		m = machine.NewDispenserMachine(&machine.DispenserMachineConfig{
-			TouchPin:  cfg.Raspberry.TouchPin,
-			MotorPin:  cfg.Raspberry.MotorPin,
-			BuzzerPin: cfg.Raspberry.BuzzerPin,
-		})
-
-		log.Infof("Created Raspberry Pi machine on touch pin %v, motor pin %v and buzzer pin %v.",
-			cfg.Raspberry.TouchPin, cfg.Raspberry.MotorPin, cfg.Raspberry.BuzzerPin)
-	case "mock":
-		m = machine.NewMockMachine(cfg.Mock.Listen)
-
-		log.Info("Created a mock machine.")
-	default:
-		return errors.Errorf("Unknown machine type %v", cfg.Machine)
-	}
-
-	// central controller for everything the dispenser does
-	dispenser := newDispenser(&dispenserConfig{
-		machine:     m,
-		accessPoint: a,
-		db:          sweetDB,
-		memoPrefix:  cfg.MemoPrefix,
-	})
-
-	log.Infof("Created dispenser.")
-
-	// Handle interrupt signals correctly
-	go func() {
-		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, os.Interrupt)
-		sig := <-signals
-		log.Info(sig)
-		log.Info("Received an interrupt, stopping dispenser...")
-		dispenser.shutdown()
 	}()
 
 	// Create a gRPC server for remote control of the dispenser
@@ -229,8 +212,18 @@ func sweetdMain() error {
 		}
 	}
 
+	// Handle interrupt signals correctly
+	go func() {
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt)
+		sig := <-signals
+		log.Info(sig)
+		log.Info("Received an interrupt, stopping dispenser...")
+		dispenser.Shutdown()
+	}()
+
 	// blocks until the dispenser is shut down
-	err = dispenser.run()
+	err = dispenser.Run()
 	if err != nil {
 		return errors.Errorf("Failed running dispenser: %v", err)
 	}

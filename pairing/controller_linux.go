@@ -8,8 +8,9 @@ import (
 	"github.com/muka/go-bluetooth/linux/btmgmt"
 	"github.com/muka/go-bluetooth/service"
 	"github.com/the-lightning-land/sweetd/ap"
-	"time"
+	"github.com/the-lightning-land/sweetd/dispenser"
 	"strings"
+	"time"
 )
 
 const (
@@ -36,13 +37,18 @@ const (
 )
 
 type Controller struct {
-	log         Logger
-	adapterId   string
-	accessPoint ap.Ap
-	app         *service.Application
-	service     *service.GattService1
-	ssid        string
-	psk         string
+	log                        Logger
+	adapterId                  string
+	accessPoint                ap.Ap
+	apClient                   *ap.ApClient
+	app                        *service.Application
+	service                    *service.GattService1
+	ssid                       string
+	psk                        string
+	dispenser                  *dispenser.Dispenser
+	ssidChanges                chan []byte
+	ipChanges                  chan []byte
+	networkAvailabilityChanges chan []byte
 }
 
 func NewController(config *Config) (*Controller, error) {
@@ -60,34 +66,74 @@ func NewController(config *Config) (*Controller, error) {
 	// Assign the depending access point
 	controller.accessPoint = config.AccessPoint
 
+	// Most pairing actions rely on functions the dispenser is providing
+	controller.dispenser = config.Dispenser
+
+	controller.ipChanges = make(chan []byte)
+	controller.ssidChanges = make(chan []byte)
+	controller.networkAvailabilityChanges = make(chan []byte)
+
 	var err error
 
 	app := GattApp(objectName, objectPath, localName)
 	service := app.Service(Primary, candyServiceUuid, Advertised)
 
-	service.DeviceNameCharacteristic("Candy").
+	service.DeviceNameCharacteristic().
+		WithValue("Candy").
+		Create().
 		UserDescriptionDescriptor("Device Name").
 		PresentationDescriptor()
-	service.ManufacturerNameCharacteristic("The Lightning Land").
+
+	service.ManufacturerNameCharacteristic().
+		WithValue("The Lightning Land").
+		Create().
 		UserDescriptionDescriptor("Manufacturer Name").
 		PresentationDescriptor()
-	service.SerialNumberCharacteristic("123456789").
+
+	service.SerialNumberCharacteristic().
+		WithValue("123456789").
+		Create().
 		UserDescriptionDescriptor("Serial Number").
 		PresentationDescriptor()
-	service.ModelNumberCharacteristic("moon").
+
+	service.ModelNumberCharacteristic().
+		WithValue("moon").
+		Create().
 		UserDescriptionDescriptor("Model Number").
 		PresentationDescriptor()
-	service.Characteristic(networkAvailabilityStatus, controller.readNetworkAvailabilityStatus, nil).
+
+	service.Characteristic(networkAvailabilityStatus).
+		WithReadHandler(controller.readNetworkAvailabilityStatus).
+		WithNotifications(controller.networkAvailabilityChanges).
+		Create().
 		UserDescriptionDescriptor("Network Availability Status")
-	service.Characteristic(ipAddress, controller.readIpAddress, nil).
+
+	service.Characteristic(ipAddress).
+		WithReadHandler(controller.readIpAddress).
+		WithNotifications(controller.ipChanges).
+		Create().
 		UserDescriptionDescriptor("IP Address")
-	service.Characteristic(wifiScanList, controller.readWifiScanList, nil).
+
+	service.Characteristic(wifiScanList).
+		WithReadHandler(controller.readWifiScanList).
+		Create().
 		UserDescriptionDescriptor("Wi-Fi Scan List")
-	service.Characteristic(wifiSsidString, controller.readWifiSsidString, controller.writeWifiSsidString).
+
+	service.Characteristic(wifiSsidString).
+		WithReadHandler(controller.readWifiSsidString).
+		WithWriteHandler(controller.writeWifiSsidString).
+		WithNotifications(controller.ssidChanges).
+		Create().
 		UserDescriptionDescriptor("Wi-Fi SSID")
-	service.Characteristic(wifiPskString, nil, controller.writeWifiPskString).
+
+	service.Characteristic(wifiPskString).
+		WithWriteHandler(controller.writeWifiPskString).
+		Create().
 		UserDescriptionDescriptor("Wi-Fi PSK")
-	service.Characteristic(wifiConnectSignal, nil, controller.writeWifiConnectSignal).
+
+	service.Characteristic(wifiConnectSignal).
+		WithWriteHandler(controller.writeWifiConnectSignal).
+		Create().
 		UserDescriptionDescriptor("Wi-Fi Connect Signal")
 
 	controller.app, err = app.Run()
@@ -123,10 +169,30 @@ func (c *Controller) Start() error {
 		return errors.Errorf("Failed to advertise: %v", err)
 	}
 
+	c.apClient = c.accessPoint.SubscribeUpdates()
+	go func() {
+		for {
+			update := <-c.apClient.Updates
+
+			c.log.Infof("Got update: %v", update)
+
+			c.ssidChanges <- []byte(update.Ssid)
+			c.ipChanges <- []byte(update.Ip)
+
+			if update.Connected {
+				c.networkAvailabilityChanges <- []byte{1}
+			} else {
+				c.networkAvailabilityChanges <- []byte{0}
+			}
+		}
+	}()
+
 	return nil
 }
 
 func (c *Controller) Stop() error {
+	c.apClient.Cancel()
+
 	err := c.app.StopAdvertising()
 	if err != nil {
 		return errors.Errorf("Could not stop advertising: %v", err)
@@ -238,7 +304,7 @@ func (c *Controller) writeWifiConnectSignal(value []byte) error {
 	c.log.Infof("Writing wifi connect signal to %v", value)
 
 	if bytes.Equal(value, []byte{1}) {
-		err := c.accessPoint.ConnectWifi(c.ssid, c.psk)
+		err := c.dispenser.ConnectToWifi(c.ssid, c.psk)
 		if err != nil {
 			return errors.Errorf("Could not connect to wifi: %v", err)
 		}

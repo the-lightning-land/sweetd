@@ -17,9 +17,10 @@ type ConnectionStatus struct {
 
 type Ap interface {
 	Start() error
-	StartHotspot() error
 	ListWifiNetworks() ([]*Network, error)
 	ConnectWifi(ssid string, psk string) error
 	GetConnectionStatus() (*ConnectionStatus, error)
 	Stop() error
+	SubscribeUpdates() *ApClient
+	deleteApClient(id uint32)
 }
