@@ -18,6 +18,10 @@ func (a *MockAp) StartHotspot() error {
 	return nil
 }
 
+func (a *MockAp) ScanWifiNetworks() error {
+	return nil
+}
+
 func (a *MockAp) ListWifiNetworks() ([]*Network, error) {
 	var empty []*Network
 	return empty, nil

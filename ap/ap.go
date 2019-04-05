@@ -17,6 +17,7 @@ type ConnectionStatus struct {
 
 type Ap interface {
 	Start() error
+	ScanWifiNetworks() error
 	ListWifiNetworks() ([]*Network, error)
 	ConnectWifi(ssid string, psk string) error
 	GetConnectionStatus() (*ConnectionStatus, error)

@@ -2,7 +2,6 @@ package pairing
 
 import (
 	"bytes"
-	"encoding/json"
 	"github.com/go-errors/errors"
 	"github.com/muka/go-bluetooth/api"
 	"github.com/muka/go-bluetooth/linux/btmgmt"
@@ -28,12 +27,13 @@ const (
 	localName = "Candy"
 
 	candyServiceUuid          = candyServiceUuidPrefix + "0000" + uuidSuffix
-	networkAvailabilityStatus = candyServiceUuidPrefix + "CA01" + uuidSuffix
-	ipAddress                 = candyServiceUuidPrefix + "CA02" + uuidSuffix
-	wifiScanList              = candyServiceUuidPrefix + "CA03" + uuidSuffix
-	wifiSsidString            = candyServiceUuidPrefix + "CA04" + uuidSuffix
-	wifiPskString             = candyServiceUuidPrefix + "CA05" + uuidSuffix
-	wifiConnectSignal         = candyServiceUuidPrefix + "CA06" + uuidSuffix
+	networkAvailabilityStatus = candyServiceUuidPrefix + "0001" + uuidSuffix
+	ipAddress                 = candyServiceUuidPrefix + "0002" + uuidSuffix
+	wifiScanSignal            = candyServiceUuidPrefix + "0003" + uuidSuffix
+	wifiScanList              = candyServiceUuidPrefix + "0004" + uuidSuffix
+	wifiSsidString            = candyServiceUuidPrefix + "0005" + uuidSuffix
+	wifiPskString             = candyServiceUuidPrefix + "0006" + uuidSuffix
+	wifiConnectSignal         = candyServiceUuidPrefix + "0007" + uuidSuffix
 )
 
 type Controller struct {
@@ -113,6 +113,11 @@ func NewController(config *Config) (*Controller, error) {
 		WithNotifications(controller.ipChanges).
 		Create().
 		UserDescriptionDescriptor("IP Address")
+
+	service.Characteristic(wifiScanSignal).
+		WithWriteHandler(controller.writeWifiScanSignal).
+		Create().
+		UserDescriptionDescriptor("Wi-Fi Scan Signal")
 
 	service.Characteristic(wifiScanList).
 		WithReadHandler(controller.readWifiScanList).
@@ -245,6 +250,19 @@ type WifiScanListItem struct {
 	Ssid string `json:"ssid"`
 }
 
+func (c *Controller) writeWifiScanSignal(value []byte) error {
+	c.log.Infof("Writing wifi scan signal to %v", value)
+
+	if bytes.Equal(value, []byte{1}) {
+		err := c.accessPoint.ScanWifiNetworks()
+		if err != nil {
+			return errors.Errorf("Could not scan wifi networks: %v", err)
+		}
+	}
+
+	return nil
+}
+
 func (c *Controller) readWifiScanList() ([]byte, error) {
 	c.log.Infof("Reading wifi scan list...")
 
@@ -253,19 +271,38 @@ func (c *Controller) readWifiScanList() ([]byte, error) {
 		return nil, errors.Errorf("Could not get wifi scan list: %v", err)
 	}
 
-	wifiScanList := []*WifiScanListItem{} // Use literal instead of declaration so it serializes into empty json array
+	// Map wifi's, so only one entry per SSID is left
+	wifiScanMap := make(map[string]*WifiScanListItem)
 	for _, net := range networks {
-		wifiScanList = append(wifiScanList, &WifiScanListItem{
+		wifiScanMap[net.Ssid] = &WifiScanListItem{
 			Ssid: net.Ssid,
-		})
+		}
 	}
 
-	payload, err := json.Marshal(wifiScanList)
-	if err != nil {
-		return nil, errors.Errorf("Could not serialize wifi scan list: %v", err)
+	var list string
+
+	// Use literal instead of declaration so it serializes into empty json array
+	wifiScanList := []*WifiScanListItem{}
+	for _, net := range wifiScanMap {
+		wifiScanList = append(wifiScanList, net)
 	}
 
-	return payload, nil
+	for i, net := range wifiScanList {
+		if i == 0 {
+			list = net.Ssid
+		} else {
+			list = net.Ssid + "\t" + list
+		}
+	}
+
+	//payload, err := json.Marshal(wifiScanList)
+	//if err != nil {
+	//	return nil, errors.Errorf("Could not serialize wifi scan list: %v", err)
+	//}
+
+	c.log.Infof("Returning Wi-Fi networks: %s", list)
+
+	return []byte(list), nil
 }
 
 func (c *Controller) readWifiSsidString() ([]byte, error) {

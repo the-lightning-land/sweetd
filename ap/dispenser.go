@@ -69,8 +69,8 @@ func (a *DispenserAp) syncConnectionStatus() {
 	if err != nil {
 		log.Errorf("Getting Wifi connection status failed: %v", err)
 		return
-	} else if status.State == "SCANNING" || status.State == "ASSOCIATING" || status.State == "ASSOCIATED" {
-		log.Infof("Skipping state: %v", status.State)
+	} else if status.State == "SCANNING" || status.State == "ASSOCIATING" || status.State == "ASSOCIATED" || status.State == "4WAY_HANDSHAKE" {
+		// log.Infof("Skipping state: %v", status.State)
 		return
 	}
 
@@ -112,7 +112,8 @@ func (a *DispenserAp) syncConnectionStatus() {
 		log.Infof("Changed ip from %v to %v", a.connectionStatus.Ip, status.Ip)
 	}
 
-	if a.connectionStatus != nil && a.connectionStatus.State != "COMPLETED" && "COMPLETED" == status.State {
+	// TODO: this might be too early
+	if a.connectionStatus != nil && a.connectionStatus.Ssid != status.Ssid {
 		log.Infof("Renewing IP address")
 
 		err := renewUdhcp()
@@ -139,35 +140,22 @@ func (a *DispenserAp) syncConnectionStatus() {
 	}
 }
 
-func (a *DispenserAp) ListWifiNetworks() ([]*Network, error) {
-	statusTicker := time.NewTicker(1 * time.Second)
-	defer statusTicker.Stop()
-
+func (a *DispenserAp) ScanWifiNetworks() error {
 	err := scan(a.config.Interface)
 	if err != nil {
-		return nil, errors.Errorf("Scan failed: %v", err)
+		return errors.Errorf("Scan failed: %v", err)
 	}
 
-	for {
-		<-statusTicker.C
+	return nil
+}
 
-		status, err := getStatus(a.config.Interface)
-		if err != nil {
-			return nil, errors.Errorf("Getting Wifi connection status failed: %v", err)
-		}
-
-		if status.State == "SCANNING" {
-			// Skip processing state SCANNING and try in next cycle
-			continue
-		}
-
-		results, err := results(a.config.Interface)
-		if err != nil {
-			log.Errorf("Result failed: %v", err)
-		}
-
-		return results, nil
+func (a *DispenserAp) ListWifiNetworks() ([]*Network, error) {
+	results, err := results(a.config.Interface)
+	if err != nil {
+		log.Errorf("Result failed: %v", err)
 	}
+
+	return results, nil
 }
 
 func (a *DispenserAp) ConnectWifi(ssid string, psk string) error {
