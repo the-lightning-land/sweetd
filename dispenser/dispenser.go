@@ -206,7 +206,10 @@ func (d *Dispenser) ConnectLndNode(uri string, certBytes []byte, macaroonBytes [
 
 	// close any previous connections
 	if d.grpcConn != nil {
-		d.grpcConn.Close()
+		err := d.grpcConn.Close()
+		if err != nil{
+			log.Warnf("Could not close previous GRPC connection: %v", err)
+		}
 	}
 
 	// assign new connection
@@ -221,7 +224,9 @@ func (d *Dispenser) ConnectLndNode(uri string, certBytes []byte, macaroonBytes [
 		for {
 			invoice, err := invoices.Recv()
 			if err == io.EOF {
-				break
+				log.Warnf("Got EOF from invoices stream: %v", err)
+				time.Sleep(1 * time.Second)
+				continue
 			}
 
 			if err != nil {
@@ -251,6 +256,8 @@ func (d *Dispenser) ConnectLndNode(uri string, certBytes []byte, macaroonBytes [
 				log.Debugf("Generated invoice of %v sat", invoice.Value)
 			}
 		}
+
+		log.Info("Not listening to paid invoices anymore.")
 	}()
 
 	return nil
