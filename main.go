@@ -11,6 +11,7 @@ import (
 	"github.com/the-lightning-land/sweetd/pos"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/sweetrpc"
+	"github.com/the-lightning-land/sweetd/updater"
 	"google.golang.org/grpc"
 	"net"
 	"os"
@@ -116,6 +117,31 @@ func sweetdMain() error {
 		log.Infof("No saved Wifi connection available. Not connecting.")
 	}
 
+	// The updater
+	var u updater.Updater
+
+	switch cfg.Updater {
+	case "none":
+		u = updater.NewNoopUpdater()
+
+		log.Info("Created noop updater.")
+	case "mender":
+		u, err = updater.NewMenderUpdater(&updater.MenderUpdaterConfig{
+			Logger: log.New().WithField("system", "updater"),
+		})
+
+		log.Info("Created Mender updater.")
+	default:
+		return errors.Errorf("Unknown updater type %v", cfg.Updater)
+	}
+
+	artifactName, err := u.GetArtifactName()
+	if err != nil {
+		log.Error("Could not obtain artifact name. Continuing though...")
+	} else {
+		log.Infof("Updater returned artifact name %v", artifactName)
+	}
+
 	// The hardware controller
 	var m machine.Machine
 
@@ -143,6 +169,7 @@ func sweetdMain() error {
 		AccessPoint: a,
 		DB:          sweetDB,
 		MemoPrefix:  cfg.MemoPrefix,
+		Updater:     u,
 	})
 
 	log.Infof("Created dispenser.")

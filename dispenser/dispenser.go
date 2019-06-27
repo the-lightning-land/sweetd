@@ -9,6 +9,7 @@ import (
 	"github.com/the-lightning-land/sweetd/ap"
 	"github.com/the-lightning-land/sweetd/machine"
 	"github.com/the-lightning-land/sweetd/sweetdb"
+	"github.com/the-lightning-land/sweetd/updater"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -35,6 +36,7 @@ type Dispenser struct {
 	dispenseClientMtx    sync.Mutex
 	nextDispenseClientID uint32
 	memoPrefix           string
+	Updater              updater.Updater
 }
 
 type DispenseClient struct {
@@ -49,6 +51,7 @@ type Config struct {
 	AccessPoint ap.Ap
 	DB          *sweetdb.DB
 	MemoPrefix  string
+	Updater     updater.Updater
 }
 
 func NewDispenser(config *Config) *Dispenser {
@@ -63,6 +66,7 @@ func NewDispenser(config *Config) *Dispenser {
 		dispenses:       make(chan bool),
 		dispenseClients: make(map[uint32]*DispenseClient),
 		memoPrefix:      config.MemoPrefix,
+		Updater:         config.Updater,
 	}
 }
 
@@ -207,7 +211,7 @@ func (d *Dispenser) ConnectLndNode(uri string, certBytes []byte, macaroonBytes [
 	// close any previous connections
 	if d.grpcConn != nil {
 		err := d.grpcConn.Close()
-		if err != nil{
+		if err != nil {
 			log.Warnf("Could not close previous GRPC connection: %v", err)
 		}
 	}
