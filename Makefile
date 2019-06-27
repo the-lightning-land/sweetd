@@ -7,7 +7,7 @@ DATE := $(shell date +%Y-%m-%d)
 
 LDFLAGS := "-X main.Commit=$(COMMIT) -X main.Version=$(VERSION) -X main.Date=$(DATE) ${LDFLAGS}"
 
-GOBUILD := GO111MODULE=on go build -v
+GOBUILD := go build -v
 RM := rm -f
 
 # commands
