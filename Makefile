@@ -5,7 +5,7 @@ VERSION := $(shell git describe --tags)
 COMMIT := $(shell git rev-parse HEAD)
 DATE := $(shell date +%Y-%m-%d)
 
-LDFLAGS := "-X main.Commit=$(COMMIT) -X main.Version=$(VERSION) -X main.Date=$(DATE) ${LDFLAGS}"
+LDFLAGS := "-X main.Commit=$(COMMIT) -X main.Version=$(VERSION) -X main.Date=$(DATE)"
 
 GOBUILD := GO111MODULE=on go build -v
 RM := rm -f
