@@ -1,0 +1,19 @@
+{
+  "name": "@the-lightning-land/candy-pos",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/the-lightning-land/sweetd",
+  "author": "David Knezić <davidknezic@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next",
+    "build": "next build",
+    "start": "next start",
+    "export": "npm run build && next export"
+  },
+  "dependencies": {
+    "next": "^8.1.0",
+    "react": "^16.8.6",
+    "react-dom": "^16.8.6"
+  }
+}

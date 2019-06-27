@@ -15,6 +15,10 @@ RM := rm -f
 default: build
 
 compile:
+	@$(call print, "Getting dependencies.")
+	go get
+	@$(call print, "Packaging static assets.")
+	packr2
 	@$(call print, "Building sweetd.")
 	$(GOBUILD) -o sweetd -ldflags $(LDFLAGS) $(PKG)
 
@@ -23,6 +27,8 @@ test:
 	go test -v ./...
 
 clean:
+	@$(call print, "Cleaning static asset packages.")
+	packr2 clean
 	@$(call print, "Cleaning builds and module cache")
 	$(RM) ./sweetd
 

@@ -26,3 +26,5 @@ sweetd-*
 
 # Relase
 dist
+
+*-packr.go
