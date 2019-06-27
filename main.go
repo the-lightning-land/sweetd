@@ -192,7 +192,7 @@ func sweetdMain() error {
 		for _, listener := range cfg.Listeners {
 			lis, err := net.Listen(listener.Network(), listener.String())
 			if err != nil {
-				return errors.New("RPC server unable to listen on %s")
+				return errors.Errorf("RPC server unable to listen on %s", listener.String())
 			}
 
 			defer func() {
