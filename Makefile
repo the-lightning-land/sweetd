@@ -17,6 +17,10 @@ default: build
 compile:
 	@$(call print, "Getting dependencies.")
 	go get
+	@$(call print, "Getting node dependencies.")
+	(cd pos && npm install)
+	@$(call print, "Compiling point-of-sale assets.")
+	(cd pos && npm run export)
 	@$(call print, "Packaging static assets.")
 	packr2
 	@$(call print, "Building sweetd.")
