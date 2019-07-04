@@ -6,14 +6,18 @@
   "author": "David Knezić <davidknezic@gmail.com>",
   "license": "MIT",
   "scripts": {
-    "dev": "next",
+    "dev": "next -p 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "export": "npm run build && next export"
   },
   "dependencies": {
     "next": "^8.1.0",
+    "qrcode.react": "^0.9.3",
     "react": "^16.8.6",
-    "react-dom": "^16.8.6"
+    "react-animate-height": "^2.0.15",
+    "react-copy-to-clipboard": "^5.0.1",
+    "react-dom": "^16.8.6",
+    "ws": "^7.0.1"
   }
 }

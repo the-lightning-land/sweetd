@@ -1,22 +1,14 @@
 package dispenser
 
 import (
-	"crypto/x509"
-	"encoding/hex"
 	"github.com/go-errors/errors"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	log "github.com/sirupsen/logrus"
 	"github.com/the-lightning-land/sweetd/ap"
 	"github.com/the-lightning-land/sweetd/machine"
+	"github.com/the-lightning-land/sweetd/node"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/updater"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
-	"io"
-	"strings"
 	"sync"
 	"time"
 )
@@ -29,7 +21,6 @@ type Dispenser struct {
 	BuzzOnDispense       bool
 	done                 chan struct{}
 	payments             chan *lnrpc.Invoice
-	grpcConn             *grpc.ClientConn
 	LightningNodeUri     string
 	dispenses            chan bool
 	dispenseClients      map[uint32]*DispenseClient
@@ -37,6 +28,7 @@ type Dispenser struct {
 	nextDispenseClientID uint32
 	memoPrefix           string
 	Updater              updater.Updater
+	node                 node.Node
 }
 
 type DispenseClient struct {
@@ -168,115 +160,86 @@ func (d *Dispenser) DeleteLndNode() error {
 	return nil
 }
 
-var (
-	beginCertificateBlock = []byte("-----BEGIN CERTIFICATE-----\n")
-	endCertificateBlock   = []byte("\n-----END CERTIFICATE-----")
-)
-
 func (d *Dispenser) ConnectLndNode(uri string, certBytes []byte, macaroonBytes []byte) error {
-	log.Infof("Connecting to remote lightning node %s", uri)
-
-	cert := x509.NewCertPool()
-
-	fullCertBytes := append(beginCertificateBlock, certBytes...)
-	fullCertBytes = append(fullCertBytes, endCertificateBlock...)
-
-	if ok := cert.AppendCertsFromPEM(fullCertBytes); !ok {
-		return errors.New("Could not parse tls cert.")
-	}
-
-	creds := credentials.NewClientTLSFromCert(cert, "")
-
-	conn, err := grpc.Dial(uri, grpc.WithTransportCredentials(creds))
-	if err != nil {
-		return errors.Errorf("Could not connect to lightning node: %v", err)
-	}
-
-	client := lnrpc.NewLightningClient(conn)
-
-	hexMacaroon := hex.EncodeToString(macaroonBytes)
-
-	ctx := context.Background()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("macaroon", hexMacaroon))
-
-	log.Info("Subscribing to invoices...")
-
-	invoices, err := client.SubscribeInvoices(ctx, &lnrpc.InvoiceSubscription{})
-	if err != nil {
-		return errors.Errorf("Could not subscribe to invoices: %v", err)
-	}
-
-	log.Info("Connected to lightning node.")
-
-	// close any previous connections
-	if d.grpcConn != nil {
-		err := d.grpcConn.Close()
-		if err != nil {
-			log.Warnf("Could not close previous GRPC connection: %v", err)
+	if d.node != nil {
+		if err := d.node.Stop(); err != nil {
+			log.Warnf("Could not properly shut down node: %v", err)
 		}
 	}
 
-	// assign new connection
-	d.grpcConn = conn
+	log.Infof("Connecting to remote lightning node %v", uri)
+
+	var err error
+	d.node, err = node.NewLndNode(&node.LndNodeConfig{
+		Uri:           uri,
+		Logger:        log.New().WithField("system", "node"),
+		CertBytes:     certBytes,
+		MacaroonBytes: macaroonBytes,
+	})
+	if err != nil {
+		return errors.Errorf("Could not connect: %v", err)
+	}
 
 	// save currently connected node uri
 	d.LightningNodeUri = uri
 
-	go func() {
-		log.Info("Listening to paid invoices...")
-
-		for {
-			invoice, err := invoices.Recv()
-			if err == io.EOF {
-				log.Warnf("Got EOF from invoices stream: %v", err)
-				time.Sleep(1 * time.Second)
-				continue
-			}
-
-			if err != nil {
-				errStatus, ok := status.FromError(err)
-				if !ok {
-					log.Errorf("Could not get status from err: %v", err)
-				}
-
-				if errStatus.Code() == 1 {
-					log.Info("Stopping invoice listener")
-					break
-				} else if err != nil {
-					log.WithError(err).Error("Failed receiving subscription items")
-					break
-				}
-			}
-
-			if invoice.Settled {
-				if d.memoPrefix == "" ||
-					(d.memoPrefix != "" && strings.HasPrefix(invoice.Memo, d.memoPrefix)) {
-					log.Debugf("Received settled payment of %v sat", invoice.Value)
-					d.payments <- invoice
-				} else {
-					log.Infof("Received payment with memo %s but memo prefix is %s.", invoice.Memo, d.memoPrefix)
-				}
-			} else {
-				log.Debugf("Generated invoice of %v sat", invoice.Value)
-			}
-		}
-
-		log.Info("Not listening to paid invoices anymore.")
-	}()
-
 	return nil
 }
+
+//func n() {
+//	log.Info("Listening to paid invoices...")
+//
+//	for {
+//		invoice, err := invoices.Recv()
+//		if err == io.EOF {
+//			log.Warnf("Got EOF from invoices stream: %v", err)
+//			time.Sleep(1 * time.Second)
+//			continue
+//		}
+//
+//		if err != nil {
+//			errStatus, ok := status.FromError(err)
+//			if !ok {
+//				log.Errorf("Could not get status from err: %v", err)
+//			}
+//
+//			if errStatus.Code() == 1 {
+//				log.Info("Stopping invoice listener")
+//				break
+//			} else if err != nil {
+//				log.WithError(err).Error("Failed receiving subscription items")
+//				break
+//			}
+//		}
+//
+//		if invoice.Settled {
+//			if d.memoPrefix == "" ||
+//				(d.memoPrefix != "" && strings.HasPrefix(invoice.Memo, d.memoPrefix)) {
+//				log.Debugf("Received settled payment of %v sat", invoice.Value)
+//				d.payments <- invoice
+//			} else {
+//				log.Infof("Received payment with memo %s but memo prefix is %s.", invoice.Memo, d.memoPrefix)
+//			}
+//		} else {
+//			log.Debugf("Generated invoice of %v sat", invoice.Value)
+//		}
+//	}
+//
+//	log.Info("Not listening to paid invoices anymore.")
+//}s
 
 func (d *Dispenser) DisconnectLndNode() error {
 	log.Infof("Disconnecting from remote lightning node")
 
-	// close open connection
-	if d.grpcConn != nil {
-		d.grpcConn.Close()
+	if d.node != nil {
+		err := d.node.Stop()
+		if err != nil {
+			return errors.Errorf("Could not stop node: %v", err)
+		}
 	}
 
-	// remove currently connected node uri
 	d.LightningNodeUri = ""
+	d.node = nil
 
 	return nil
 }
@@ -361,11 +324,16 @@ func (d *Dispenser) ConnectToWifi(ssid string, psk string) error {
 }
 
 func (d *Dispenser) Shutdown() {
-	d.machine.Stop()
+	if d.node != nil {
+		err := d.node.Stop()
+		if err != nil {
+			log.Warnf("Could not properly shut down node: %v", err)
+		}
 
-	if d.grpcConn != nil {
-		d.grpcConn.Close()
+		d.node = nil
 	}
+
+	d.machine.Stop()
 
 	close(d.done)
 }

@@ -6,6 +6,7 @@ require (
 	github.com/coreos/etcd v3.3.13+incompatible // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd v0.0.0-20190620071333-e64a0ec8b42a // indirect
+	github.com/cretz/bine v0.1.0
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/go-errors/errors v1.0.1
 	github.com/go-kit/kit v0.9.0 // indirect
@@ -16,6 +17,8 @@ require (
 	github.com/golang/protobuf v1.3.1
 	github.com/google/pprof v0.0.0-20190515194954-54271f7e092f // indirect
 	github.com/googleapis/gax-go/v2 v2.0.5 // indirect
+	github.com/gorilla/mux v1.7.3
+	github.com/gorilla/websocket v1.4.0
 	github.com/grpc-ecosystem/grpc-gateway v1.9.2 // indirect
 	github.com/inconshreveable/go-update v0.0.0-20160112193335-8152e7eb6ccf
 	github.com/jessevdk/go-flags v1.4.0
