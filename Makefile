@@ -20,7 +20,7 @@ compile:
 	@$(call print, "Compiling point-of-sale assets.")
 	(cd pos && npm run export)
 	@$(call print, "Getting dependencies.")
-	go get github.com/gobuffalo/packr/v2/...
+	go get github.com/gobuffalo/packr/v2/packr2/...
 	@$(call print, "Packaging static assets.")
 	packr2
 	@$(call print, "Building sweetd.")
