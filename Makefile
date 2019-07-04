@@ -7,7 +7,7 @@ DATE := $(shell date +%Y-%m-%d)
 
 LDFLAGS := "-X main.Commit=$(COMMIT) -X main.Version=$(VERSION) -X main.Date=$(DATE)"
 
-GOBUILD := GO111MODULE=on go build -v
+GOBUILD := GO111MODULE=on go build
 RM := rm -f
 
 # commands
@@ -15,12 +15,12 @@ RM := rm -f
 default: build
 
 compile:
-	@$(call print, "Getting dependencies.")
-	go get
 	@$(call print, "Getting node dependencies.")
 	(cd pos && npm install)
 	@$(call print, "Compiling point-of-sale assets.")
 	(cd pos && npm run export)
+	@$(call print, "Getting dependencies.")
+	go get github.com/gobuffalo/packr/v2/...
 	@$(call print, "Packaging static assets.")
 	packr2
 	@$(call print, "Building sweetd.")
@@ -41,4 +41,3 @@ clean-cache:
 	go clean --modcache
 
 build: compile
-

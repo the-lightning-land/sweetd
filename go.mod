@@ -11,7 +11,7 @@ require (
 	github.com/go-errors/errors v1.0.1
 	github.com/go-kit/kit v0.9.0 // indirect
 	github.com/gobuffalo/packr v1.30.1 // indirect
-	github.com/gobuffalo/packr/v2 v2.5.1
+	github.com/gobuffalo/packr/v2 v2.5.2
 	github.com/godbus/dbus v5.0.0+incompatible
 	github.com/golang/mock v1.3.1 // indirect
 	github.com/golang/protobuf v1.3.1
@@ -47,7 +47,6 @@ require (
 	golang.org/x/mobile v0.0.0-20190607214518-6fa95d984e88 // indirect
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859
 	golang.org/x/sys v0.0.0-20190626221950-04f50cda93cb
-	golang.org/x/tools v0.0.0-20190627203933-19ff4fff8850 // indirect
 	google.golang.org/api v0.7.0 // indirect
 	google.golang.org/appengine v1.6.1 // indirect
 	google.golang.org/genproto v0.0.0-20190627203621-eb59cef1c072 // indirect
