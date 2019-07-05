@@ -10,19 +10,33 @@ LDFLAGS := "-X main.Commit=$(COMMIT) -X main.Version=$(VERSION) -X main.Date=$(D
 GOBUILD := GO111MODULE=on go build
 RM := rm -f
 
+PACKR2_PKG := github.com/gobuffalo/packr
+PACKR2_BIN := $(GO_BIN)/packr2
+PACKR2_COMMIT := $(shell cat go.mod | \
+    grep $(PACKR2_PKG) | \
+    tail -n1 | \
+    awk -F " " '{ print $$2 }' | \
+    awk -F "/" '{ print $$1 }')
+
 # commands
 
 default: build
 
-compile:
+packr2:
+	@$(call print, "Installing packr2.")
+	GO111MODULE=on go get -v $(PACKR2_PKG)@$(PACKR2_COMMIT)
+	$(GOINSTALL) $(PACKR2_PKG)
+	$(GOINSTALL) $(PACKR2_PKG)/v2/packr2
+
+pack:
 	@$(call print, "Getting node dependencies.")
 	(cd pos && npm install)
 	@$(call print, "Compiling point-of-sale assets.")
 	(cd pos && npm run export)
-	@$(call print, "Getting dependencies.")
-	go get github.com/gobuffalo/packr/v2/packr2/...
 	@$(call print, "Packaging static assets.")
-	packr2
+	$(PACKR2_BIN)
+
+compile: pack
 	@$(call print, "Building sweetd.")
 	$(GOBUILD) -o sweetd -ldflags $(LDFLAGS) $(PKG)
 

@@ -47,8 +47,10 @@ func NewPos(config *Config) (*Pos, error) {
   api.Handle("/invoices", pos.handleAddInvoice()).Methods(http.MethodPost)
   api.Use(mux.CORSMethodMiddleware(api))
 
-  pos.router.Path("/").Handler(pos.handlePaymentsPage()).Methods(http.MethodGet)
-  pos.router.PathPrefix("/").Handler(pos.handleStatic())
+  box := packr.New("web", "./out")
+
+  pos.router.Path("/").Handler(pos.handlePaymentsPage(box)).Methods(http.MethodGet)
+  pos.router.PathPrefix("/").Handler(pos.handleStatic(box))
 
   return pos, nil
 }
@@ -149,8 +151,7 @@ func (p *Pos) availabilityMiddleware(next http.Handler) http.Handler {
   })
 }
 
-func (p *Pos) handlePaymentsPage() http.HandlerFunc {
-  box := packr.New("web", "./out")
+func (p *Pos) handlePaymentsPage(box *packr.Box) http.HandlerFunc {
   return func(w http.ResponseWriter, r *http.Request) {
     page := box.String("/pay/index.html")
     page = strings.ReplaceAll(page, "http://localhost:3000/api", r.URL.Hostname()+"/api")
@@ -161,8 +162,7 @@ func (p *Pos) handlePaymentsPage() http.HandlerFunc {
   }
 }
 
-func (p *Pos) handleStatic() http.Handler {
-  box := packr.New("web", "./out")
+func (p *Pos) handleStatic(box *packr.Box) http.Handler {
   return http.FileServer(box)
 }
 
