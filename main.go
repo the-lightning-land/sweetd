@@ -170,7 +170,8 @@ func sweetdMain() error {
 
 	// create subsystem responsible for the point of sale app
 	pos, err := pos.NewPos(&pos.Config{
-		Logger: log.New().WithField("system", "pos"),
+		Logger:     log.New().WithField("system", "pos"),
+		TorDataDir: cfg.Tor.DataDir,
 	})
 	if err != nil {
 		return errors.Errorf("Could not create PoS: %v", err)

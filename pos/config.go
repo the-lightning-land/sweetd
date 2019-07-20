@@ -1,5 +1,6 @@
 package pos
 
 type Config struct {
-  Logger Logger
+  Logger     Logger
+  TorDataDir string
 }

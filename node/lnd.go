@@ -120,19 +120,6 @@ func (r *LndNode) run() {
 				Memo:           invoice.Memo,
 			}
 		}
-
-		//
-		//if invoice.Settled {
-		//	if d.memoPrefix == "" ||
-		//		(d.memoPrefix != "" && strings.HasPrefix(invoice.Memo, d.memoPrefix)) {
-		//		log.Debugf("Received settled payment of %v sat", invoice.Value)
-		//		d.payments <- invoice
-		//	} else {
-		//		log.Infof("Received payment with memo %s but memo prefix is %s.", invoice.Memo, d.memoPrefix)
-		//	}
-		//} else {
-		//	log.Debugf("Generated invoice of %v sat", invoice.Value)
-		//}
 	}
 }
 

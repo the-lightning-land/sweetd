@@ -28,6 +28,10 @@ type mockConfig struct {
 type lndConfig struct {
 }
 
+type torConfig struct {
+	DataDir string `long:"data" description:"The directory that stores Tor data."`
+}
+
 type config struct {
 	ShowVersion  bool     `short:"v" long:"version" description:"Display version information and exit."`
 	Debug        bool     `long:"debug" description:"Start in debug mode."`
@@ -42,6 +46,7 @@ type config struct {
 	MemoPrefix   string           `long:"memoprefix" description:"Only react to invoices that have a memo starting with this prefix. (default empty, react to all invoices)'"`
 	Updater      string           `long:"updater" description:"The updater to use." choice:"none" choice:"mender"`
 	Mender       *menderConfig    `group:"Mender" namespace:"mender"`
+	Tor          *torConfig       `group:"Tor" namespace:"tor"`
 }
 
 func loadConfig() (*config, error) {
@@ -61,6 +66,9 @@ func loadConfig() (*config, error) {
 		Mender: &menderConfig{
 			ConfigFile: "/etc/mender/mender.conf",
 			DataDir:    "/var/lib/mender",
+		},
+		Tor: &torConfig{
+			DataDir: "./tor",
 		},
 	}
 

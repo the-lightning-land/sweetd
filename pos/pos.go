@@ -19,12 +19,13 @@ import (
 )
 
 type Pos struct {
-  log      Logger
-  listener net.Listener
-  node     node.Node
-  router   *mux.Router
-  tor      *tor.Tor
-  onion    *tor.OnionService
+  log        Logger
+  torDataDir string
+  listener   net.Listener
+  node       node.Node
+  router     *mux.Router
+  tor        *tor.Tor
+  onion      *tor.OnionService
 }
 
 func NewPos(config *Config) (*Pos, error) {
@@ -35,6 +36,8 @@ func NewPos(config *Config) (*Pos, error) {
   } else {
     pos.log = noopLogger{}
   }
+
+  pos.torDataDir = config.TorDataDir
 
   pos.router = mux.NewRouter()
   pos.router.Use(pos.loggingMiddleware)
@@ -62,7 +65,9 @@ func (p *Pos) Start(key *rsa.PrivateKey) error {
   var err error
 
   // TODO(davidknezic) maybe start Tor once outside of the PoS package
-  p.tor, err = tor.Start(nil, nil)
+  p.tor, err = tor.Start(nil, &tor.StartConf{
+    DataDir: p.torDataDir,
+  })
   if err != nil {
     return errors.Errorf("Could not start tor: %v", err)
   }
