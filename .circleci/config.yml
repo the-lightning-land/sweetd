@@ -6,8 +6,6 @@ jobs:
   build:
     docker:
       - image: circleci/golang:1.12-stretch-node
-        environment:
-          GO111MODULE: "ON"
     working_directory: /go/src/github.com/the-lightning-land/sweetd
     steps:
       - checkout
