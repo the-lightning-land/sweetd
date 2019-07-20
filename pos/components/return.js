@@ -39,14 +39,10 @@ export default class Return extends Component {
   }
 
   tick() {
-    console.log('tick')
-
     if (this.state.seconds > 0) {
       this.setState({
         seconds: this.state.seconds - 1,
       })
-
-      this.timeout = setTimeout(() => this.tick(), 1000)
     } else {
       this.props.onReturn()
     }

@@ -10,6 +10,7 @@ import (
 	"github.com/the-lightning-land/sweetd/pairing"
 	"github.com/the-lightning-land/sweetd/pos"
 	"github.com/the-lightning-land/sweetd/sweetdb"
+	"github.com/the-lightning-land/sweetd/sweetlog"
 	"github.com/the-lightning-land/sweetd/sweetrpc"
 	"github.com/the-lightning-land/sweetd/updater"
 	"google.golang.org/grpc"
@@ -30,11 +31,13 @@ var (
 // sweetdMain is the true entry point for sweetd. This is required since defers
 // created in the top-level scope of a main method aren't executed if os.Exit() is called.
 func sweetdMain() error {
+	sweetLog := sweetlog.New()
+
 	log.SetOutput(os.Stdout)
 	log.SetLevel(log.InfoLevel)
+	log.AddHook(sweetLog)
 
 	log.Debug("Starting sweetd...")
-
 	log.Debug("Loading config...")
 
 	// Load CLI configuration and defaults
@@ -163,6 +166,18 @@ func sweetdMain() error {
 		return errors.Errorf("Unknown machine type %v", cfg.Machine)
 	}
 
+	log.Infof("Creating PoS...")
+
+	// create subsystem responsible for the point of sale app
+	pos, err := pos.NewPos(&pos.Config{
+		Logger: log.New().WithField("system", "pos"),
+	})
+	if err != nil {
+		return errors.Errorf("Could not create PoS: %v", err)
+	}
+
+	log.Infof("Created PoS")
+
 	// central controller for everything the dispenser does
 	dispenser := dispenser.NewDispenser(&dispenser.Config{
 		Machine:     m,
@@ -170,6 +185,9 @@ func sweetdMain() error {
 		DB:          sweetDB,
 		MemoPrefix:  cfg.MemoPrefix,
 		Updater:     u,
+		Pos:         pos,
+		SweetLog:    sweetLog,
+		Logger:      log.New().WithField("system", "dispenser"),
 	})
 
 	log.Infof("Created dispenser.")
@@ -204,36 +222,6 @@ func sweetdMain() error {
 		err := pairingController.Stop()
 		if err != nil {
 			log.Errorf("Could not properly shut down pairing controller: %v", err)
-		}
-	}()
-
-	log.Infof("Creating PoS...")
-
-	// create subsystem responsible for the point of sale app
-	pos, err := pos.NewPos(&pos.Config{
-		Logger: log.New().WithField("system", "pos"),
-	})
-	if err != nil {
-		return errors.Errorf("Could not create PoS: %v", err)
-	}
-
-	log.Infof("Created PoS")
-
-	log.Infof("Starting PoS...")
-
-	err = pos.Start()
-	if err != nil {
-		return errors.Errorf("Could not start PoS: %v", err)
-	}
-
-	log.Infof("Started PoS")
-
-	defer func() {
-		log.Infof("Stopping PoS...")
-
-		err := pos.Stop()
-		if err != nil {
-			log.Errorf("Could not properly shut down PoS: %v", err)
 		}
 	}()
 

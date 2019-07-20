@@ -2,17 +2,18 @@ package pos
 
 import (
   "context"
+  "crypto/rand"
+  "crypto/rsa"
   "encoding/json"
-  "github.com/cretz/bine/control"
   "github.com/cretz/bine/tor"
   "github.com/go-errors/errors"
   "github.com/gobuffalo/packr/v2"
   "github.com/gorilla/mux"
   "github.com/gorilla/websocket"
   "github.com/the-lightning-land/sweetd/node"
-  "log"
   "net"
   "net/http"
+  "net/url"
   "strings"
   "time"
 )
@@ -22,7 +23,6 @@ type Pos struct {
   listener net.Listener
   node     node.Node
   router   *mux.Router
-  clients  []*client
   tor      *tor.Tor
   onion    *tor.OnionService
 }
@@ -40,30 +40,32 @@ func NewPos(config *Config) (*Pos, error) {
   pos.router.Use(pos.loggingMiddleware)
 
   api := pos.router.PathPrefix("/api").Subrouter()
+  api.Use(pos.localhostMiddleware)
   api.Use(pos.availabilityMiddleware)
-  api.PathPrefix("/").Handler(pos.handleApiCors()).Methods(http.MethodOptions)
-  api.Handle("/invoices/status", pos.handleStreamInvoiceStatus()).Methods(http.MethodGet)
+  api.Handle("/invoices/{rHash}/status", pos.handleStreamInvoiceStatus()).Methods(http.MethodGet)
   api.Handle("/invoices/{rHash}", pos.handleGetInvoice()).Methods(http.MethodGet)
   api.Handle("/invoices", pos.handleAddInvoice()).Methods(http.MethodPost)
   api.Use(mux.CORSMethodMiddleware(api))
 
   box := packr.New("web", "./out")
-
-  pos.router.Path("/").Handler(pos.handlePaymentsPage(box)).Methods(http.MethodGet)
-  pos.router.PathPrefix("/").Handler(pos.handleStatic(box))
+  pos.router.PathPrefix("/").Handler(pos.handleStatic(box)).Methods(http.MethodGet)
 
   return pos, nil
 }
 
-func (p *Pos) Start() error {
+func (p *Pos) GenerateKey() (*rsa.PrivateKey, error) {
+  // Generate a V2 RSA 1024 bit key
+  return rsa.GenerateKey(rand.Reader, 1024)
+}
+
+func (p *Pos) Start(key *rsa.PrivateKey) error {
   var err error
 
+  // TODO(davidknezic) maybe start Tor once outside of the PoS package
   p.tor, err = tor.Start(nil, nil)
   if err != nil {
     return errors.Errorf("Could not start tor: %v", err)
   }
-
-  key := control.GenKey(control.KeyAlgoED25519V3)
 
   lis, err := net.Listen("tcp", ":3000")
   if err != nil {
@@ -84,10 +86,7 @@ func (p *Pos) Start() error {
     defer listenCancel()
 
     p.onion, err = p.tor.Listen(listenCtx, &tor.ListenConf{
-      // LocalPort:   3000,
-      // RemotePorts: []int{3000},
       LocalListener: lis,
-      Version3:      true,
       Key:           key,
       RemotePorts:   []int{80},
     })
@@ -111,7 +110,12 @@ func (p *Pos) Start() error {
 }
 
 func (p *Pos) Stop() error {
-  err := p.listener.Close()
+  err := p.RemoveNode()
+  if err != nil {
+    return errors.Errorf("Could not properly remove node: %v", err)
+  }
+
+  err = p.listener.Close()
   if err != nil {
     return errors.New("Could not properly close listener")
   }
@@ -130,9 +134,20 @@ func (p *Pos) Stop() error {
 }
 
 func (p *Pos) SetNode(node node.Node) error {
+  if p.node != nil {
+    err := p.RemoveNode()
+    if err != nil {
+      p.log.Errorf("Could not remove previous node: %v", err)
+    }
+  }
+
   p.node = node
 
-  // TODO: fix subscriptions
+  return nil
+}
+
+func (p *Pos) RemoveNode() error {
+  p.node = nil
 
   return nil
 }
@@ -144,51 +159,130 @@ func (p *Pos) loggingMiddleware(next http.Handler) http.Handler {
   })
 }
 
-func (p *Pos) availabilityMiddleware(next http.Handler) http.Handler {
+func (p *Pos) localhostMiddleware(next http.Handler) http.Handler {
   return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    p.log.Errorf("PoS request failed due to unavailable node")
-    http.Error(w, "{ \"error\": \"No node is available at the moment\" }", http.StatusServiceUnavailable)
+    if strings.Contains(r.Referer(), "http://localhost:3001") {
+      w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3001")
+      w.Header().Set("Access-Control-Max-Age", "1")
+    }
+    next.ServeHTTP(w, r)
   })
 }
 
-func (p *Pos) handlePaymentsPage(box *packr.Box) http.HandlerFunc {
-  return func(w http.ResponseWriter, r *http.Request) {
-    page := box.String("/pay/index.html")
-    page = strings.ReplaceAll(page, "http://localhost:3000/api", r.URL.Hostname()+"/api")
-    _, err := w.Write([]byte(page))
-    if err != nil {
-      http.Error(w, err.Error(), http.StatusInternalServerError)
+func (p *Pos) availabilityMiddleware(next http.Handler) http.Handler {
+  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    if p.node == nil {
+      p.log.Errorf("PoS request failed due to unavailable node")
+      http.Error(w, "{ \"error\": \"No node is available at the moment\" }", http.StatusServiceUnavailable)
+      return
     }
-  }
+
+    next.ServeHTTP(w, r)
+  })
 }
 
 func (p *Pos) handleStatic(box *packr.Box) http.Handler {
   return http.FileServer(box)
 }
 
-func (p *Pos) handleApiCors() http.HandlerFunc {
-  return func(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3001")
-    w.Header().Set("Access-Control-Max-Age", "1")
+func checkOrigin(r *http.Request) bool {
+  origin := r.Header["Origin"]
+  if len(origin) == 0 {
+    return true
   }
+
+  if strings.Contains(origin[0], "http://localhost:3001") {
+    return true
+  }
+
+  u, err := url.Parse(origin[0])
+  if err != nil {
+    return false
+  }
+
+  return strings.EqualFold(u.Host, r.Host)
 }
 
 func (p *Pos) handleStreamInvoiceStatus() http.HandlerFunc {
-  upgrader := &websocket.Upgrader{}
+  upgrader := &websocket.Upgrader{
+    CheckOrigin: checkOrigin,
+  }
 
   return func(w http.ResponseWriter, r *http.Request) {
+    vars := mux.Vars(r)
+    rHash := vars["rHash"]
+
     c, err := upgrader.Upgrade(w, r, nil)
     if err != nil {
-      log.Print("upgrade:", err)
+      p.log.Errorf("Could not upgrade: %v", err)
       return
     }
 
-    defer c.Close()
+    // read pump
+    go func() {
+      defer c.Close()
 
-    client := &client{conn: c}
-    p.clients = append(p.clients, client)
+      c.SetReadLimit(512)
+      c.SetReadDeadline(time.Now().Add(60 * time.Second))
+      c.SetPongHandler(func(string) error {
+        c.SetReadDeadline(time.Now().Add(60 * time.Second))
+        return nil
+      })
 
-    // client.process()
+      for {
+        _, _, err := c.ReadMessage()
+        if err != nil {
+          if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+            p.log.Errorf("Unexpected websocket closure: %v", err)
+          }
+          break
+        }
+      }
+    }()
+
+    // write pump
+    go func() {
+      defer c.Close()
+
+      ticker := time.NewTicker(54 * time.Second)
+      defer ticker.Stop()
+
+      client, err := p.node.SubscribeInvoices()
+      if err != nil {
+        p.log.Errorf("Could not subscribe to invoices: %v", err)
+        return
+      }
+
+      defer client.Cancel()
+
+      for {
+        select {
+        case invoice, ok := <-client.Invoices:
+          c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+
+          if !ok {
+            c.WriteMessage(websocket.CloseMessage, []byte{})
+            return
+          }
+
+          if invoice.RHash != rHash {
+            continue
+          }
+
+          err := c.WriteJSON(&invoiceStatusMessage{
+            Settled: invoice.Settled,
+          })
+          if err != nil {
+            return
+          }
+        case <-ticker.C:
+          c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+          if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
+            return
+          }
+        }
+      }
+    }()
   }
 }
 
@@ -203,7 +297,11 @@ func (p *Pos) handleGetInvoice() http.HandlerFunc {
       return
     }
 
-    payload, err := json.Marshal(invoice)
+    payload, err := json.Marshal(&invoiceMessage{
+      Settled:        invoice.Settled,
+      RHash:          invoice.RHash,
+      PaymentRequest: invoice.PaymentRequest,
+    })
     if err != nil {
       http.Error(w, err.Error(), http.StatusInternalServerError)
       return
@@ -219,13 +317,18 @@ func (p *Pos) handleGetInvoice() http.HandlerFunc {
 
 func (p *Pos) handleAddInvoice() http.HandlerFunc {
   return func(w http.ResponseWriter, r *http.Request) {
-    invoice, err := p.node.AddInvoice()
+    invoice, err := p.node.AddInvoice(&node.InvoiceRequest{
+    })
     if err != nil {
       http.Error(w, err.Error(), http.StatusInternalServerError)
       return
     }
 
-    payload, err := json.Marshal(invoice)
+    payload, err := json.Marshal(&invoiceMessage{
+      Settled:        invoice.Settled,
+      RHash:          invoice.RHash,
+      PaymentRequest: invoice.PaymentRequest,
+    })
     if err != nil {
       http.Error(w, err.Error(), http.StatusInternalServerError)
       return

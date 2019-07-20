@@ -1,13 +1,14 @@
 package dispenser
 
 import (
+	"crypto/rsa"
 	"github.com/go-errors/errors"
-	"github.com/lightningnetwork/lnd/lnrpc"
-	log "github.com/sirupsen/logrus"
 	"github.com/the-lightning-land/sweetd/ap"
 	"github.com/the-lightning-land/sweetd/machine"
 	"github.com/the-lightning-land/sweetd/node"
+	"github.com/the-lightning-land/sweetd/pos"
 	"github.com/the-lightning-land/sweetd/sweetdb"
+	"github.com/the-lightning-land/sweetd/sweetlog"
 	"github.com/the-lightning-land/sweetd/updater"
 	"sync"
 	"time"
@@ -20,7 +21,7 @@ type Dispenser struct {
 	DispenseOnTouch      bool
 	BuzzOnDispense       bool
 	done                 chan struct{}
-	payments             chan *lnrpc.Invoice
+	payments             chan *node.Invoice
 	LightningNodeUri     string
 	dispenses            chan bool
 	dispenseClients      map[uint32]*DispenseClient
@@ -29,6 +30,10 @@ type Dispenser struct {
 	memoPrefix           string
 	Updater              updater.Updater
 	node                 node.Node
+	invoicesClient       *node.InvoicesClient
+	pos                  *pos.Pos
+	sweetLog             *sweetlog.SweetLog
+	logger               Logger
 }
 
 type DispenseClient struct {
@@ -44,6 +49,9 @@ type Config struct {
 	DB          *sweetdb.DB
 	MemoPrefix  string
 	Updater     updater.Updater
+	Pos         *pos.Pos
+	SweetLog    *sweetlog.SweetLog
+	Logger      Logger
 }
 
 func NewDispenser(config *Config) *Dispenser {
@@ -54,16 +62,19 @@ func NewDispenser(config *Config) *Dispenser {
 		DispenseOnTouch: true,
 		BuzzOnDispense:  false,
 		done:            make(chan struct{}),
-		payments:        make(chan *lnrpc.Invoice),
+		payments:        make(chan *node.Invoice),
 		dispenses:       make(chan bool),
 		dispenseClients: make(map[uint32]*DispenseClient),
 		memoPrefix:      config.MemoPrefix,
 		Updater:         config.Updater,
+		pos:             config.Pos,
+		sweetLog:        config.SweetLog,
+		logger:          config.Logger,
 	}
 }
 
 func (d *Dispenser) Run() error {
-	log.Info("Starting machine...")
+	d.logger.Infof("Starting machine...")
 
 	if err := d.machine.Start(); err != nil {
 		return errors.Errorf("Could not start machine: %v", err)
@@ -81,8 +92,13 @@ func (d *Dispenser) Run() error {
 	if node != nil {
 		err := d.ConnectLndNode(node.Uri, node.Cert, node.Macaroon)
 		if err != nil {
-			log.Errorf("Could not connect to remote lightning node: %v", err)
+			d.logger.Errorf("Could not connect to remote lightning node: %v", err)
 		}
+	}
+
+	err = d.StartPos()
+	if err != nil {
+		d.logger.Errorf("Could not start PoS: %v", err)
 	}
 
 	// Notify all subscribed dispense clients
@@ -100,7 +116,7 @@ func (d *Dispenser) Run() error {
 		select {
 		case on := <-d.machine.TouchEvents():
 			// react on direct touch events of the machine
-			log.Infof("Touch event %v", on)
+			d.logger.Infof("Touch event %v", on)
 
 			if d.DispenseOnTouch && on {
 				d.ToggleDispense(true)
@@ -112,7 +128,7 @@ func (d *Dispenser) Run() error {
 			// react on incoming payments
 			dispense := 1500 * time.Millisecond
 
-			log.Debugf("Dispensing for a duration of %v", dispense)
+			d.logger.Debugf("Dispensing for a duration of %v", dispense)
 
 			d.ToggleDispense(true)
 			time.Sleep(dispense)
@@ -162,77 +178,58 @@ func (d *Dispenser) DeleteLndNode() error {
 
 func (d *Dispenser) ConnectLndNode(uri string, certBytes []byte, macaroonBytes []byte) error {
 	if d.node != nil {
-		if err := d.node.Stop(); err != nil {
-			log.Warnf("Could not properly shut down node: %v", err)
+		err := d.DisconnectLndNode()
+		if err != nil {
+			d.logger.Warnf("Could not properly disconnect previous node: %v", err)
 		}
 	}
 
-	log.Infof("Connecting to remote lightning node %v", uri)
+	d.logger.Infof("Connecting to remote lightning node %v", uri)
 
 	var err error
 	d.node, err = node.NewLndNode(&node.LndNodeConfig{
 		Uri:           uri,
-		Logger:        log.New().WithField("system", "node"),
+		Logger:        d.logger,
 		CertBytes:     certBytes,
 		MacaroonBytes: macaroonBytes,
 	})
 	if err != nil {
-		return errors.Errorf("Could not connect: %v", err)
+		return errors.Errorf("Could not create node: %v", err)
+	}
+
+	err = d.node.Start()
+	if err != nil {
+		return errors.Errorf("Could not start node: %v", err)
 	}
 
 	// save currently connected node uri
 	d.LightningNodeUri = uri
 
+	d.invoicesClient, err = d.node.SubscribeInvoices()
+	if err != nil {
+		return errors.Errorf("Could not subscribe to invoices: %v", err)
+	}
+
+	go func() {
+		for {
+			invoice := <-d.invoicesClient.Invoices
+			d.payments <- invoice
+		}
+	}()
+
 	return nil
 }
 
-//func n() {
-//	log.Info("Listening to paid invoices...")
-//
-//	for {
-//		invoice, err := invoices.Recv()
-//		if err == io.EOF {
-//			log.Warnf("Got EOF from invoices stream: %v", err)
-//			time.Sleep(1 * time.Second)
-//			continue
-//		}
-//
-//		if err != nil {
-//			errStatus, ok := status.FromError(err)
-//			if !ok {
-//				log.Errorf("Could not get status from err: %v", err)
-//			}
-//
-//			if errStatus.Code() == 1 {
-//				log.Info("Stopping invoice listener")
-//				break
-//			} else if err != nil {
-//				log.WithError(err).Error("Failed receiving subscription items")
-//				break
-//			}
-//		}
-//
-//		if invoice.Settled {
-//			if d.memoPrefix == "" ||
-//				(d.memoPrefix != "" && strings.HasPrefix(invoice.Memo, d.memoPrefix)) {
-//				log.Debugf("Received settled payment of %v sat", invoice.Value)
-//				d.payments <- invoice
-//			} else {
-//				log.Infof("Received payment with memo %s but memo prefix is %s.", invoice.Memo, d.memoPrefix)
-//			}
-//		} else {
-//			log.Debugf("Generated invoice of %v sat", invoice.Value)
-//		}
-//	}
-//
-//	log.Info("Not listening to paid invoices anymore.")
-//}s
-
 func (d *Dispenser) DisconnectLndNode() error {
-	log.Infof("Disconnecting from remote lightning node")
+	d.logger.Infof("Disconnecting from remote lightning node")
 
 	if d.node != nil {
-		err := d.node.Stop()
+		err := d.invoicesClient.Cancel()
+		if err != nil {
+			d.logger.Warnf("Could not unsubscribe from invoices: %v", err)
+		}
+
+		err = d.node.Stop()
 		if err != nil {
 			return errors.Errorf("Could not stop node: %v", err)
 		}
@@ -240,12 +237,13 @@ func (d *Dispenser) DisconnectLndNode() error {
 
 	d.LightningNodeUri = ""
 	d.node = nil
+	d.invoicesClient = nil
 
 	return nil
 }
 
 func (d *Dispenser) SetWifiConnection(connection *sweetdb.WifiConnection) error {
-	log.Infof("Setting Wifi connection")
+	d.logger.Infof("Setting Wifi connection")
 
 	err := d.db.SetWifiConnection(connection)
 	if err != nil {
@@ -256,7 +254,7 @@ func (d *Dispenser) SetWifiConnection(connection *sweetdb.WifiConnection) error 
 }
 
 func (d *Dispenser) GetName() (string, error) {
-	log.Infof("Getting name")
+	d.logger.Infof("Getting name")
 
 	name, err := d.db.GetName()
 	if err != nil {
@@ -267,7 +265,7 @@ func (d *Dispenser) GetName() (string, error) {
 }
 
 func (d *Dispenser) SetName(name string) error {
-	log.Infof("Setting name")
+	d.logger.Infof("Setting name")
 
 	err := d.db.SetName(name)
 	if err != nil {
@@ -278,7 +276,7 @@ func (d *Dispenser) SetName(name string) error {
 }
 
 func (d *Dispenser) SetDispenseOnTouch(dispenseOnTouch bool) error {
-	log.Infof("Setting dispense on touch")
+	d.logger.Infof("Setting dispense on touch")
 
 	d.DispenseOnTouch = dispenseOnTouch
 
@@ -291,7 +289,7 @@ func (d *Dispenser) SetDispenseOnTouch(dispenseOnTouch bool) error {
 }
 
 func (d *Dispenser) SetBuzzOnDispense(buzzOnDispense bool) error {
-	log.Infof("Setting buzz on dispense")
+	d.logger.Infof("Setting buzz on dispense")
 
 	d.BuzzOnDispense = buzzOnDispense
 
@@ -304,11 +302,11 @@ func (d *Dispenser) SetBuzzOnDispense(buzzOnDispense bool) error {
 }
 
 func (d *Dispenser) ConnectToWifi(ssid string, psk string) error {
-	log.Infof("Connecting to wifi %v", ssid)
+	d.logger.Infof("Connecting to wifi %v", ssid)
 
 	err := d.AccessPoint.ConnectWifi(ssid, psk)
 	if err != nil {
-		log.Errorf("Could not get Wifi networks: %v", err)
+		d.logger.Errorf("Could not get Wifi networks: %v", err)
 		return errors.New("Could not get Wifi networks")
 	}
 
@@ -317,7 +315,55 @@ func (d *Dispenser) ConnectToWifi(ssid string, psk string) error {
 		Psk:  psk,
 	})
 	if err != nil {
-		log.Errorf("Could not save wifi connection: %v", err)
+		d.logger.Errorf("Could not save wifi connection: %v", err)
+	}
+
+	return nil
+}
+
+func (d *Dispenser) StartPos() error {
+	var key *rsa.PrivateKey
+
+	d.logger.Infof("Starting PoS")
+
+	key, err := d.db.GetPosPrivateKey()
+	if err != nil {
+		d.logger.Warnf("Could not read PoS private key: %v", err)
+	}
+
+	if key == nil {
+		key, err = d.pos.GenerateKey()
+		if err != nil {
+			return errors.Errorf("Could not generate PoS private key: %v", err)
+		}
+
+		d.logger.Infof("Generated new PoS private key")
+
+		err := d.db.SetPosPrivateKey(key)
+		if err != nil {
+			d.logger.Errorf("Could not save generated PoS private key: %v", err)
+		}
+	}
+
+	err = d.pos.SetNode(d.node)
+	if err != nil {
+		d.logger.Errorf("Could not set PoS node: %v", err)
+	}
+
+	err = d.pos.Start(key)
+	if err != nil {
+		return errors.Errorf("Could not start PoS: %v", err)
+	}
+
+	return nil
+}
+
+func (d *Dispenser) StopPos() error {
+	d.logger.Infof("Stopping PoS")
+
+	err := d.pos.Stop()
+	if err != nil {
+		return errors.Errorf("Could not properly shut down PoS: %v", err)
 	}
 
 	return nil
@@ -327,10 +373,15 @@ func (d *Dispenser) Shutdown() {
 	if d.node != nil {
 		err := d.node.Stop()
 		if err != nil {
-			log.Warnf("Could not properly shut down node: %v", err)
+			d.logger.Warnf("Could not properly shut down node: %v", err)
 		}
 
 		d.node = nil
+	}
+
+	err := d.StopPos()
+	if err != nil {
+		d.logger.Errorf("Could not stop PoS: %v", err)
 	}
 
 	d.machine.Stop()

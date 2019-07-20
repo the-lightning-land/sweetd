@@ -4,6 +4,7 @@ import AnimateHeight from 'react-animate-height'
 import QRCode from 'qrcode.react'
 import classnames from 'classnames'
 import Router from 'next/router'
+import queryString from 'query-string'
 import Candy from '../components/candy'
 import Check from '../components/check'
 import Button from '../components/button'
@@ -16,47 +17,59 @@ export default class IndexPage extends Component {
 
   static getInitialProps({ query }) {
     return {
-      r_hash: query.r_hash,
-      apiBaseUrl: 'http://localhost:3000/api',
+      apiBaseUrl: process.env.API_BASE_URL,
     }
   }
 
   async componentDidMount() {
-    if (this.props.r_hash) {
-      this.setState({ invoice: {} })
+    const { r_hash: rHash } = queryString.parse(location.search)
+
+    await this.fetch(rHash, {
+      apiBaseUrl: this.props.apiBaseUrl || `${window.location.origin}/api`,
+    })
+  }
+
+  async fetch(rHash, { apiBaseUrl }) {
+    let invoice = null;
+
+    if (rHash) {
+      const res = await fetch(`${apiBaseUrl}/invoices/${rHash}`, { method: 'GET' })
+      invoice = await res.json()
     } else {
-      this.setState({ invoice: null })
-
-      const res = await fetch(`${this.props.apiBaseUrl}/invoices`, { method: 'POST' })
-
-      const invoice = await res.json()
-
-      console.log(invoice)
+      const res = await fetch(`${apiBaseUrl}/invoices`, { method: 'POST' })
+      invoice = await res.json()
     }
 
-    document.onkeydown = (e) => {
-      if(e.key === 'Escape') {
-        this.setState({
-          invoice: { ...this.state, settled: true },
-        })
-      }
+    this.setState({ invoice })
+
+    const url = `/?r_hash=${invoice.r_hash}`
+    Router.push(url, url, { shallow: true })
+
+    if (invoice && !invoice.settled) {
+      const statusSocket = new WebSocket(`${apiBaseUrl.replace('http', 'ws')}/invoices/${invoice.r_hash}/status`);
+
+      statusSocket.onmessage = ({ data }) => {
+        const { settled } = JSON.parse(data) || {}
+
+        this.setState((state) => ({
+          invoice: state.invoice !== null ? {
+            ...state.invoice,
+            settled,
+          } : null,
+        }))
+
+        if (settled) {
+          // close after invoice was settled
+          statusSocket.close()
+        }
+      };
     }
   }
 
-  async componentDidUpdate(prevProps) {
-    if (this.props.r_hash === prevProps.r_hash) {
-      return
-    }
-
-    if (this.props.r_hash) {
-      this.setState({ invoice: {} })
-    } else {
-      this.setState({ invoice: null })
-    }
-  }
-
-  handleReturnFromPaidInvoice() {
-    Router.push('/pay')
+  handleReturnFromPaidInvoice = async () => {
+    await this.fetch(null, {
+      apiBaseUrl: this.props.apiBaseUrl || `${window.location.origin}/api`,
+    })
   }
 
   render() {
@@ -84,7 +97,6 @@ export default class IndexPage extends Component {
           <meta property="og:description" content="Pay for your candy with Bitcoin over Lightning" />
           {/* <meta name="og:image" content={imageUrl} /> */}
         </Head>
-
         <div className="title">
           Candy Dispenser
         </div>
@@ -93,20 +105,34 @@ export default class IndexPage extends Component {
         </div>
         <div className="qr">
           <div className={classnames('code', 'loading', { show: !this.state.invoice })}>
+            loading
+          </div>
+          <div className={classnames('code', 'loading', { show: this.state.invoice && this.state.invoice.settled })}>
             <Check />
-            <Button secondary onClick={this.handleReturnFromPaidInvoice}>
-              <span>Back to start in {5}s</span>
-            </Button>
+            <Return
+              seconds={this.state.invoice && this.state.invoice.settled ? 5 : null}
+              onReturn={this.handleReturnFromPaidInvoice}
+            >
+              {(secondsLeft) => (
+                <Button secondary onClick={this.handleReturnFromPaidInvoice}>
+                  {secondsLeft > 0 ? (
+                    <span>Back to start in {secondsLeft}s</span>
+                  ) : (
+                    <span>Back to start...</span>
+                  )}
+                </Button>
+              )}
+            </Return>
           </div>
           <a
-            className={classnames('code', { show: this.state.invoice })}
-            href={`lightning:${this.state.payment_request}`}
+            className={classnames('code', { show: this.state.invoice && !this.state.invoice.settled })}
+            href={`lightning:${this.state.invoice && this.state.invoice.payment_request}`}
           >
             <QRCode
               style={{ width: '100%', height: '100%', display: 'block' }}
               size={256}
               renderAs="svg"
-              value={this.state.payment_request || ''}
+              value={this.state.invoice && this.state.invoice.payment_request || ''}
             />
           </a>
         </div>
@@ -114,11 +140,10 @@ export default class IndexPage extends Component {
           <div className="invoice">Your invoice ⚡️</div>
           <pre>
             <code>
-              {this.state.payment_request}
+              {this.state.invoice && this.state.invoice.payment_request}
             </code>
           </pre>
         </div>
-
         <style jsx>{`
           * {
             box-sizing: border-box;

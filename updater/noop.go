@@ -5,6 +5,9 @@ import "errors"
 type NoopUpdater struct {
 }
 
+// Compile time check for protocol compatibility
+var _ Updater = (*NoopUpdater)(nil)
+
 func NewNoopUpdater() *NoopUpdater {
 	return &NoopUpdater{}
 }

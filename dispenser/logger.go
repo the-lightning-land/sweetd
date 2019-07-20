@@ -1,7 +1,9 @@
-package node
+package dispenser
 
 type Logger interface {
+	Debugf(format string, args ...interface{})
 	Infof(format string, args ...interface{})
+	Warnf(format string, args ...interface{})
 	Errorf(format string, args ...interface{})
 }
 
@@ -11,5 +13,7 @@ var _ Logger = (*noopLogger)(nil)
 type noopLogger struct {
 }
 
+func (l noopLogger) Debugf(format string, args ...interface{})  {}
 func (l noopLogger) Infof(format string, args ...interface{})  {}
+func (l noopLogger) Warnf(format string, args ...interface{})  {}
 func (l noopLogger) Errorf(format string, args ...interface{}) {}

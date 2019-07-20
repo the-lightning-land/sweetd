@@ -26,6 +26,9 @@ type MenderUpdater struct {
 	nextClientID uint32
 }
 
+// Compile time check for protocol compatibility
+var _ Updater = (*MenderUpdater)(nil)
+
 func NewMenderUpdater(config *MenderUpdaterConfig) (*MenderUpdater, error) {
 	_, err := exec.LookPath("mender")
 	if err != nil {
