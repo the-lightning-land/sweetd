@@ -6,7 +6,7 @@ jobs:
   build:
     docker:
       - image: circleci/golang:1.12-stretch-node
-    working_directory: /go/src/github.com/the-lightning-land/sweetd
+    working_directory: /sweetd
     steps:
       - checkout
       - restore_cache:
