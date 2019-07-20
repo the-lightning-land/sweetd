@@ -7,10 +7,10 @@ DATE := $(shell date +%Y-%m-%d)
 
 LDFLAGS := "-X main.Commit=$(COMMIT) -X main.Version=$(VERSION) -X main.Date=$(DATE)"
 
-GOBUILD := GO111MODULE=on go build
+GOBUILD := go build
 RM := rm -f
 
-PACKR2_PKG := github.com/gobuffalo/packr
+PACKR2_PKG := github.com/gobuffalo/packr/v2
 PACKR2_BIN := $(GO_BIN)/packr2
 PACKR2_COMMIT := $(shell cat go.mod | \
     grep $(PACKR2_PKG) | \
@@ -24,9 +24,8 @@ default: build
 
 packr2:
 	@$(call print, "Installing packr2.")
-	GO111MODULE=on go get -v $(PACKR2_PKG)@$(PACKR2_COMMIT)
-	$(GOINSTALL) $(PACKR2_PKG)
-	$(GOINSTALL) $(PACKR2_PKG)/v2/packr2
+	go get $(PACKR2_PKG)@$(PACKR2_COMMIT)
+	go install $(PACKR2_PKG)/packr2
 
 pack: packr2
 	@$(call print, "Getting node dependencies.")
