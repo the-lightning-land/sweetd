@@ -28,7 +28,7 @@ packr2:
 	$(GOINSTALL) $(PACKR2_PKG)
 	$(GOINSTALL) $(PACKR2_PKG)/v2/packr2
 
-pack:
+pack: packr2
 	@$(call print, "Getting node dependencies.")
 	(cd pos && npm install)
 	@$(call print, "Compiling point-of-sale assets.")
