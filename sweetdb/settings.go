@@ -3,7 +3,6 @@ package sweetdb
 import (
 	"bytes"
 	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
 	"github.com/go-errors/errors"
 	bolt "go.etcd.io/bbolt"
@@ -17,6 +16,7 @@ var (
 	buzzOnDispenseKey  = []byte("buzzOnDispense")
 	wifiConnectionKey  = []byte("wifi")
 	posPrivateKeyKey   = []byte("posPrivateKey")
+	apiPrivateKeyKey   = []byte("apiPrivateKey")
 )
 
 type LightningNode struct {
@@ -31,52 +31,19 @@ type WifiConnection struct {
 }
 
 func (db *DB) SetPosPrivateKey(key *rsa.PrivateKey) error {
-	payload := x509.MarshalPKCS1PrivateKey(key)
-
-	return db.Update(func(tx *bolt.Tx) error {
-		// First grab the settings bucket
-		bucket, err := tx.CreateBucketIfNotExists(settingsBucket)
-		if err != nil {
-			return err
-		}
-
-		if err := bucket.Put(posPrivateKeyKey, payload); err != nil {
-			return err
-		}
-
-		return nil
-	})
+	return db.setPrivateKey(posPrivateKeyKey, key)
 }
 
 func (db *DB) GetPosPrivateKey() (*rsa.PrivateKey, error) {
-	var key *rsa.PrivateKey
+	return db.getPrivateKey(posPrivateKeyKey)
+}
 
-	err := db.View(func(tx *bolt.Tx) error {
-		// First fetch the bucket
-		bucket := tx.Bucket(settingsBucket)
-		if bucket == nil {
-			return nil
-		}
+func (db *DB) SetApiPrivateKey(key *rsa.PrivateKey) error {
+	return db.setPrivateKey(apiPrivateKeyKey, key)
+}
 
-		posPrivateKeyBytes := bucket.Get(posPrivateKeyKey)
-		if posPrivateKeyBytes == nil || bytes.Equal(posPrivateKeyBytes, []byte("null")) {
-			return nil
-		}
-
-		var err error
-		key, err = x509.ParsePKCS1PrivateKey(posPrivateKeyBytes)
-		if err != nil {
-			return errors.Errorf("Could not unmarshal data: %v", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return key, nil
+func (db *DB) GetApiPrivateKey() (*rsa.PrivateKey, error) {
+	return db.getPrivateKey(apiPrivateKeyKey)
 }
 
 func (db *DB) SetLightningNode(lightningNode *LightningNode) error {
