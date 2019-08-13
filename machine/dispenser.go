@@ -63,7 +63,7 @@ func (m *DispenserMachine) Start() error {
 	return nil
 }
 
-func (m *DispenserMachine) Stop() {
+func (m *DispenserMachine) Stop() error {
 	log.Info("Stopping machine...")
 
 	close(m.done)
@@ -72,6 +72,8 @@ func (m *DispenserMachine) Stop() {
 	m.waitGroup.Wait()
 
 	log.Info("Machine stopped")
+
+	return nil
 }
 
 func (m *DispenserMachine) ToggleMotor(on bool) {

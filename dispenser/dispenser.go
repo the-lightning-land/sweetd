@@ -384,7 +384,10 @@ func (d *Dispenser) Shutdown() {
 		d.logger.Errorf("Could not stop PoS: %v", err)
 	}
 
-	d.machine.Stop()
+	err = d.machine.Stop()
+	if err != nil {
+		d.log.Errorf("Could not stop machine: %v", err)
+	}
 
 	close(d.done)
 }

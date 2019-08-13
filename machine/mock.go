@@ -39,8 +39,9 @@ func (m *MockMachine) Start() error {
 	return nil
 }
 
-func (m *MockMachine) Stop() {
+func (m *MockMachine) Stop() error {
 	// nothing
+	return nil
 }
 
 func (m *MockMachine) TouchEvents() <-chan bool {

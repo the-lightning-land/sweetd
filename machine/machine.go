@@ -2,7 +2,7 @@ package machine
 
 type Machine interface {
 	Start() error
-	Stop()
+	Stop() error
 	TouchEvents() <-chan bool
 	ToggleMotor(on bool)
 	ToggleBuzzer(on bool)
