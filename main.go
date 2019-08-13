@@ -89,6 +89,15 @@ func sweetdMain() error {
 
 	log.Infof("Opened sweet.db")
 
+	defer func() {
+		err := sweetDB.Close()
+		if err != nil {
+			log.Errorf("Could not close sweet.db: %v", err)
+		} else {
+			log.Info("Closed sweet.db.")
+		}
+	}()
+
 	// The network access point, which acts as the core connectivity
 	// provider for all other components
 	var a ap.Ap
