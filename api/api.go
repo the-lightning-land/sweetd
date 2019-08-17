@@ -30,10 +30,24 @@ func New(config *Config) *Api {
 		api.log = noopLogger{}
 	}
 
-	api.router.Handle("/api/v1/status", api.handleGetStatus()).Methods(http.MethodGet)
-	api.router.Handle("/api/v1/update", api.handlePostUpdate()).Methods(http.MethodPost)
+	api.router.Handle("/api/v1/dispenser", api.handleGetStatus()).Methods(http.MethodGet)
 
-	// wifi conn
+	api.router.Handle("/api/v1/updates", api.handlePostUpdate()).Methods(http.MethodPost)
+	api.router.Handle("/api/v1/updates/{id}", api.handleGetUpdate()).Methods(http.MethodGet)
+	api.router.Handle("/api/v1/updates/{id}", api.handlePatchUpdate()).Methods(http.MethodPatch)
+	api.router.Handle("/api/v1/updates/{id}/events", api.handleGetUpdateEvents()).Methods(http.MethodGet)
+
+	api.router.Handle("/api/v1/nodes", api.handlePostUpdate()).Methods(http.MethodPost)
+
+	api.router.Handle("/api/v1/networks", api.handlePostUpdate()).Methods(http.MethodPost)
+
+	// /system
+	// /system/unlock
+	// /system/updates
+	// /system/time
+	// /system/network
+	// /nodes
+	// through Tor (beta)
 
 	return api
 }

@@ -1,12 +1,13 @@
 package updater
 
-type Client struct {
-	Progress   chan bool
+type UpdateClient struct {
+	Update     chan *Update
 	Id         uint32
 	cancelChan chan struct{}
+	updateId   string
 	updater    Updater
 }
 
-func (c *Client) Cancel() error {
+func (c *UpdateClient) Cancel() error {
 	return c.updater.UnsubscribeUpdate(c)
 }
