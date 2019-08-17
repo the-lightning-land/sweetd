@@ -2,14 +2,16 @@ package sweetdb
 
 import (
 	"bytes"
-	"crypto/rsa"
-	"crypto/x509"
+	"encoding/json"
 	"github.com/go-errors/errors"
 	"go.etcd.io/bbolt"
 )
 
-func (db *DB) setPrivateKey(bucket []byte, bucketKey []byte, key *rsa.PrivateKey) error {
-	payload := x509.MarshalPKCS1PrivateKey(key)
+func (db *DB) setJSON(bucket []byte, bucketKey []byte, v interface{}) error {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
 
 	return db.Update(func(tx *bbolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists(bucket)
@@ -25,23 +27,23 @@ func (db *DB) setPrivateKey(bucket []byte, bucketKey []byte, key *rsa.PrivateKey
 	})
 }
 
-func (db *DB) getPrivateKey(bucket []byte, bucketKey []byte) (*rsa.PrivateKey, error) {
-	var key *rsa.PrivateKey
+func (db *DB) getJSON(bucket []byte, bucketKey []byte, v interface{}) error {
+	var lightningNode = &LightningNode{}
 
 	err := db.View(func(tx *bbolt.Tx) error {
 		// First fetch the bucket
-		bucket := tx.Bucket(bucket)
+		bucket := tx.Bucket(settingsBucket)
 		if bucket == nil {
 			return nil
 		}
 
-		posPrivateKeyBytes := bucket.Get(bucketKey)
-		if posPrivateKeyBytes == nil || bytes.Equal(posPrivateKeyBytes, []byte("null")) {
+		lightningNodeBytes := bucket.Get(lightningNodeKey)
+		if lightningNodeBytes == nil || bytes.Equal(lightningNodeBytes, []byte("null")) {
+			lightningNode = nil
 			return nil
 		}
 
-		var err error
-		key, err = x509.ParsePKCS1PrivateKey(posPrivateKeyBytes)
+		err := json.Unmarshal(lightningNodeBytes, &v)
 		if err != nil {
 			return errors.Errorf("Could not unmarshal data: %v", err)
 		}
@@ -50,8 +52,8 @@ func (db *DB) getPrivateKey(bucket []byte, bucketKey []byte) (*rsa.PrivateKey, e
 	})
 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return key, nil
+	return nil
 }

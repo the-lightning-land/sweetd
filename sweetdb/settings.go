@@ -1,10 +1,7 @@
 package sweetdb
 
 import (
-	"bytes"
 	"crypto/rsa"
-	"encoding/json"
-	"github.com/go-errors/errors"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -31,67 +28,29 @@ type WifiConnection struct {
 }
 
 func (db *DB) SetPosPrivateKey(key *rsa.PrivateKey) error {
-	return db.setPrivateKey(posPrivateKeyKey, key)
+	return db.setPrivateKey(settingsBucket, posPrivateKeyKey, key)
 }
 
 func (db *DB) GetPosPrivateKey() (*rsa.PrivateKey, error) {
-	return db.getPrivateKey(posPrivateKeyKey)
+	return db.getPrivateKey(settingsBucket, posPrivateKeyKey)
 }
 
 func (db *DB) SetApiPrivateKey(key *rsa.PrivateKey) error {
-	return db.setPrivateKey(apiPrivateKeyKey, key)
+	return db.setPrivateKey(settingsBucket, apiPrivateKeyKey, key)
 }
 
 func (db *DB) GetApiPrivateKey() (*rsa.PrivateKey, error) {
-	return db.getPrivateKey(apiPrivateKeyKey)
+	return db.getPrivateKey(settingsBucket, apiPrivateKeyKey)
 }
 
 func (db *DB) SetLightningNode(lightningNode *LightningNode) error {
-	payload, err := json.Marshal(lightningNode)
-	if err != nil {
-		return err
-	}
-
-	return db.Update(func(tx *bolt.Tx) error {
-		// First grab the settings bucket
-		bucket, err := tx.CreateBucketIfNotExists(settingsBucket)
-		if err != nil {
-			return err
-		}
-
-		if err := bucket.Put(lightningNodeKey, payload); err != nil {
-			return err
-		}
-
-		return nil
-	})
+	return db.setJSON(settingsBucket, lightningNodeKey, lightningNode)
 }
 
 func (db *DB) GetLightningNode() (*LightningNode, error) {
 	var lightningNode = &LightningNode{}
 
-	err := db.View(func(tx *bolt.Tx) error {
-		// First fetch the bucket
-		bucket := tx.Bucket(settingsBucket)
-		if bucket == nil {
-			return nil
-		}
-
-		lightningNodeBytes := bucket.Get(lightningNodeKey)
-		if lightningNodeBytes == nil || bytes.Equal(lightningNodeBytes, []byte("null")) {
-			lightningNode = nil
-			return nil
-		}
-
-		err := json.Unmarshal(lightningNodeBytes, &lightningNode)
-		if err != nil {
-			return errors.Errorf("Could not unmarshal data: %v", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := db.getJSON(settingsBucket, lightningNodeKey, &lightningNode); err == nil {
 		return nil, err
 	}
 
@@ -99,51 +58,13 @@ func (db *DB) GetLightningNode() (*LightningNode, error) {
 }
 
 func (db *DB) SetWifiConnection(wifiConnection *WifiConnection) error {
-	payload, err := json.Marshal(wifiConnection)
-	if err != nil {
-		return err
-	}
-
-	return db.Update(func(tx *bolt.Tx) error {
-		// First grab the settings bucket
-		bucket, err := tx.CreateBucketIfNotExists(settingsBucket)
-		if err != nil {
-			return err
-		}
-
-		if err := bucket.Put(wifiConnectionKey, payload); err != nil {
-			return err
-		}
-
-		return nil
-	})
+	return db.setJSON(settingsBucket, wifiConnectionKey, wifiConnection)
 }
 
 func (db *DB) GetWifiConnection() (*WifiConnection, error) {
 	var wifiConnection = &WifiConnection{}
 
-	err := db.View(func(tx *bolt.Tx) error {
-		// First fetch the bucket
-		bucket := tx.Bucket(settingsBucket)
-		if bucket == nil {
-			return nil
-		}
-
-		wifiConnectionBytes := bucket.Get(wifiConnectionKey)
-		if wifiConnectionBytes == nil || bytes.Equal(wifiConnectionBytes, []byte("null")) {
-			wifiConnection = nil
-			return nil
-		}
-
-		err := json.Unmarshal(wifiConnectionBytes, &wifiConnection)
-		if err != nil {
-			return errors.Errorf("Could not unmarshal data: %v", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := db.getJSON(settingsBucket, wifiConnectionKey, &wifiConnection); err == nil {
 		return nil, err
 	}
 
@@ -188,45 +109,13 @@ func (db *DB) GetName() (string, error) {
 }
 
 func (db *DB) SetDispenseOnTouch(dispenseOnTouch bool) error {
-	payload, err := json.Marshal(dispenseOnTouch)
-	if err != nil {
-		return err
-	}
-
-	return db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists(settingsBucket)
-		if err != nil {
-			return err
-		}
-
-		if err := bucket.Put(dispenseOnTouchKey, payload); err != nil {
-			return err
-		}
-
-		return nil
-	})
+	return db.setJSON(settingsBucket, dispenseOnTouchKey, dispenseOnTouch)
 }
 
 func (db *DB) GetDispenseOnTouch() (bool, error) {
 	var dispenseOnTouch bool
 
-	err := db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(settingsBucket)
-		if bucket == nil {
-			return nil
-		}
-
-		dispenseOnTouchBytes := bucket.Get(dispenseOnTouchKey)
-
-		err := json.Unmarshal(dispenseOnTouchBytes, &dispenseOnTouch)
-		if err != nil {
-			return errors.Errorf("Could not unmarshal data: %v", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := db.getJSON(settingsBucket, dispenseOnTouchKey, &dispenseOnTouch); err == nil {
 		return false, err
 	}
 
@@ -234,45 +123,13 @@ func (db *DB) GetDispenseOnTouch() (bool, error) {
 }
 
 func (db *DB) SetBuzzOnDispense(buzzOnDispense bool) error {
-	payload, err := json.Marshal(buzzOnDispense)
-	if err != nil {
-		return err
-	}
-
-	return db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists(settingsBucket)
-		if err != nil {
-			return err
-		}
-
-		if err := bucket.Put(buzzOnDispenseKey, payload); err != nil {
-			return err
-		}
-
-		return nil
-	})
+	return db.setJSON(settingsBucket, buzzOnDispenseKey, buzzOnDispense)
 }
 
 func (db *DB) GetBuzzOnDispense() (bool, error) {
 	var buzzOnDispense bool
 
-	err := db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(settingsBucket)
-		if bucket == nil {
-			return nil
-		}
-
-		buzzOnDispenseBytes := bucket.Get(buzzOnDispenseKey)
-
-		err := json.Unmarshal(buzzOnDispenseBytes, &buzzOnDispense)
-		if err != nil {
-			return errors.Errorf("Could not unmarshal data: %v", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
+	if err := db.getJSON(settingsBucket, buzzOnDispenseKey, &buzzOnDispense); err == nil {
 		return false, err
 	}
 
