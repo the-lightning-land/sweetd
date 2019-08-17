@@ -11,8 +11,8 @@ jobs:
       - restore_cache:
           keys:
             - go-mod-v1-{{ checksum "go.sum" }}
-      - run: go get
-      - run: go install github.com/gobuffalo/packr/v2/packr2
+      - run: make get
+      - run: make packr2
       - run: make
       - run: make test
       - save_cache:
