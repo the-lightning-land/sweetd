@@ -108,10 +108,6 @@ func (d *Dispenser) Run() error {
 		d.log.Infof("No saved Wifi connection available. Not connecting.")
 	}
 
-	if err := d.machine.Start(); err != nil {
-		return errors.Errorf("Could not start machine: %v", err)
-	}
-
 	// Signal successful startup with two short buzzer noises
 	d.machine.DiagnosticNoise()
 

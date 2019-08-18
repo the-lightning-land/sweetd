@@ -175,6 +175,10 @@ func sweetdMain() error {
 		return errors.Errorf("Unknown machine type %v", cfg.Machine)
 	}
 
+	if err := m.Start(); err != nil {
+		return errors.Errorf("Could not start machine: %v", err)
+	}
+
 	defer func() {
 		err := m.Stop()
 		if err != nil {
