@@ -182,8 +182,9 @@ func sweetdMain() error {
 
 	// start Tor node
 	t, err := tor.Start(nil, &tor.StartConf{
-		DataDir:     cfg.Tor.DataDir,
-		DebugWriter: log.New().WithField("system", "tor").WriterLevel(log.DebugLevel),
+		ExePath:         cfg.Tor.Path,
+		TempDataDirBase: os.TempDir(),
+		DebugWriter:     log.New().WithField("system", "tor").WriterLevel(log.DebugLevel),
 	})
 	if err != nil {
 		return errors.Errorf("Could not start tor: %v", err)

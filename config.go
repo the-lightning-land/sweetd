@@ -24,7 +24,7 @@ type lndConfig struct {
 }
 
 type torConfig struct {
-	DataDir string `long:"data" description:"The directory that stores Tor data."`
+	Path string `long:"path" description:"The path to the Tor binary."`
 }
 
 type profilingConfig struct {
@@ -63,7 +63,7 @@ func loadConfig() (*config, error) {
 		MemoPrefix: "",
 		Updater:    "none",
 		Tor: &torConfig{
-			DataDir: "./tor",
+			Path: "",
 		},
 	}
 
