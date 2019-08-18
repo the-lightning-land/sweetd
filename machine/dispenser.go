@@ -31,15 +31,14 @@ type DispenserMachineConfig struct {
 var _ Machine = (*DispenserMachine)(nil)
 
 func NewDispenserMachine(config *DispenserMachineConfig) *DispenserMachine {
-	motorEvents := make(chan bool)
-	buzzerEvents := make(chan bool)
-
 	m := &DispenserMachine{
-		touchPin:     config.TouchPin,
-		motorPin:     config.MotorPin,
-		buzzerPin:    config.BuzzerPin,
-		motorEvents:  motorEvents,
-		buzzerEvents: buzzerEvents,
+		touchPin:          config.TouchPin,
+		motorPin:          config.MotorPin,
+		buzzerPin:         config.BuzzerPin,
+		motorEvents:       make(chan bool),
+		buzzerEvents:      make(chan bool),
+		touchesClients:    make(map[uint32]*TouchesClient),
+		nextTouchesClient: nextTouchesClient{id: 0},
 	}
 
 	return m

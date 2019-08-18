@@ -15,7 +15,9 @@ var _ Machine = (*MockMachine)(nil)
 
 func NewMockMachine(listen string) *MockMachine {
 	return &MockMachine{
-		listen: listen,
+		listen:            listen,
+		touchesClients:    make(map[uint32]*TouchesClient),
+		nextTouchesClient: nextTouchesClient{id: 0},
 	}
 }
 
