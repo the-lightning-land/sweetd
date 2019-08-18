@@ -432,6 +432,14 @@ func (d *Dispenser) StartPos() error {
 	return nil
 }
 
+func (d *Dispenser) GetApiOnionID() string {
+	if d.apiOnion == nil {
+		return ""
+	}
+
+	return d.apiOnion.ID
+}
+
 func (d *Dispenser) StopPos() error {
 	d.log.Infof("Stopping PoS")
 

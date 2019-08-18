@@ -34,6 +34,7 @@ const (
 	wifiSsidString            = candyServiceUuidPrefix + "0005" + uuidSuffix
 	wifiPskString             = candyServiceUuidPrefix + "0006" + uuidSuffix
 	wifiConnectSignal         = candyServiceUuidPrefix + "0007" + uuidSuffix
+	onionApi                  = candyServiceUuidPrefix + "0008" + uuidSuffix
 )
 
 type Controller struct {
@@ -49,6 +50,7 @@ type Controller struct {
 	ssidChanges                chan []byte
 	ipChanges                  chan []byte
 	networkAvailabilityChanges chan []byte
+	onionApiChanges            chan []byte
 }
 
 func NewController(config *Config) (*Controller, error) {
@@ -140,6 +142,12 @@ func NewController(config *Config) (*Controller, error) {
 		WithWriteHandler(controller.writeWifiConnectSignal).
 		Create().
 		UserDescriptionDescriptor("Wi-Fi Connect Signal")
+
+	service.Characteristic(onionApi).
+		WithReadHandler(controller.readOnionApi).
+		WithNotifications(controller.onionApiChanges).
+		Create().
+		UserDescriptionDescriptor("Onion API")
 
 	controller.app, err = app.Run()
 	if err != nil {
@@ -348,4 +356,12 @@ func (c *Controller) writeWifiConnectSignal(value []byte) error {
 	}
 
 	return nil
+}
+
+func (c *Controller) readOnionApi() ([]byte, error) {
+	c.log.Infof("Reading onion api...")
+
+	id := c.dispenser.GetApiOnionID()
+
+	return []byte(id), nil
 }
