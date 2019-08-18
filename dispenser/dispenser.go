@@ -154,9 +154,21 @@ func (d *Dispenser) Run() error {
 		}
 	}()
 
+	touches, err := d.machine.SubscribeTouches()
+	if err != nil {
+		return errors.Errorf("Could not subscribe to touch events: %v", err)
+	}
+
+	defer func() {
+		err := touches.Cancel()
+		if err != nil {
+			d.log.Errorf("Could not close touch event subscription: %v", err)
+		}
+	}()
+
 	for {
 		select {
-		case on := <-d.machine.TouchEvents():
+		case on := <-touches.Touches:
 			// react on direct touch events of the machine
 			d.log.Infof("Touch event %v", on)
 

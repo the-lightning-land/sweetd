@@ -10,14 +10,15 @@ import (
 )
 
 type DispenserMachine struct {
-	touchPin     string
-	motorPin     string
-	buzzerPin    string
-	touchEvents  chan bool      // Internal sending channel for touch events
-	motorEvents  chan bool      // Internal motor events channel
-	buzzerEvents chan bool      // Internal buzzer events channel
-	done         chan bool      // Internal done channel
-	waitGroup    sync.WaitGroup // Internal goroutine WaitGroup
+	touchPin          string
+	motorPin          string
+	buzzerPin         string
+	motorEvents       chan bool      // Internal motor events channel
+	buzzerEvents      chan bool      // Internal buzzer events channel
+	done              chan bool      // Internal done channel
+	waitGroup         sync.WaitGroup // Internal goroutine WaitGroup
+	touchesClients    map[uint32]*TouchesClient
+	nextTouchesClient nextTouchesClient
 }
 
 type DispenserMachineConfig struct {
@@ -30,7 +31,6 @@ type DispenserMachineConfig struct {
 var _ Machine = (*DispenserMachine)(nil)
 
 func NewDispenserMachine(config *DispenserMachineConfig) *DispenserMachine {
-	touchEvents := make(chan bool)
 	motorEvents := make(chan bool)
 	buzzerEvents := make(chan bool)
 
@@ -38,7 +38,6 @@ func NewDispenserMachine(config *DispenserMachineConfig) *DispenserMachine {
 		touchPin:     config.TouchPin,
 		motorPin:     config.MotorPin,
 		buzzerPin:    config.BuzzerPin,
-		touchEvents:  touchEvents,
 		motorEvents:  motorEvents,
 		buzzerEvents: buzzerEvents,
 	}
@@ -84,10 +83,6 @@ func (m *DispenserMachine) ToggleMotor(on bool) {
 func (m *DispenserMachine) ToggleBuzzer(on bool) {
 	log.Infof("Toggling buzzer %v", on)
 	m.buzzerEvents <- on
-}
-
-func (m *DispenserMachine) TouchEvents() <-chan bool {
-	return m.touchEvents
 }
 
 func (m *DispenserMachine) handleTouch() {
@@ -148,7 +143,7 @@ func (m *DispenserMachine) handleTouch() {
 		select {
 		case touch := <-edges:
 			log.WithField("pin", "touch").WithField("on", touch).Info("Received touch event")
-			m.touchEvents <- touch
+			m.notifyTouchesClients(touch)
 		case <-m.done:
 			log.Info("Got done event in handleTouch")
 
@@ -225,4 +220,33 @@ func (m *DispenserMachine) DiagnosticNoise() {
 	m.ToggleBuzzer(true)
 	time.Sleep(200 * time.Millisecond)
 	m.ToggleBuzzer(false)
+}
+
+func (m *DispenserMachine) SubscribeTouches() (*TouchesClient, error) {
+	client := &TouchesClient{
+		Touches:    make(chan bool),
+		cancelChan: make(chan struct{}),
+		machine:    m,
+	}
+
+	m.nextTouchesClient.Lock()
+	client.Id = m.nextTouchesClient.id
+	m.nextTouchesClient.id++
+	m.nextTouchesClient.Unlock()
+
+	m.touchesClients[client.Id] = client
+
+	return client, nil
+}
+
+func (m *DispenserMachine) notifyTouchesClients(touch bool) {
+	for _, client := range m.touchesClients {
+		client.Touches <- touch
+	}
+}
+
+func (m *DispenserMachine) unsubscribeTouches(client *TouchesClient) error {
+	delete(m.touchesClients, client.Id)
+	close(client.cancelChan)
+	return nil
 }

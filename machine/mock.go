@@ -5,31 +5,29 @@ import (
 )
 
 type MockMachine struct {
-	listen      string    // Listeners
-	touchEvents chan bool // Internal sending channel for touch events
+	listen            string
+	touchesClients    map[uint32]*TouchesClient
+	nextTouchesClient nextTouchesClient
 }
 
 // Compile time check for protocol compatibility
 var _ Machine = (*MockMachine)(nil)
 
 func NewMockMachine(listen string) *MockMachine {
-	touchEvents := make(chan bool)
-
 	return &MockMachine{
-		listen:      listen,
-		touchEvents: touchEvents,
+		listen: listen,
 	}
 }
 
 func (m *MockMachine) Start() error {
 	http.HandleFunc("/touch/on", func(w http.ResponseWriter, r *http.Request) {
-		m.touchEvents <- true
+		m.notifyTouchesClients(true)
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("OK"))
 	})
 
 	http.HandleFunc("/touch/off", func(w http.ResponseWriter, r *http.Request) {
-		m.touchEvents <- false
+		m.notifyTouchesClients(false)
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("OK"))
 	})
@@ -44,10 +42,6 @@ func (m *MockMachine) Stop() error {
 	return nil
 }
 
-func (m *MockMachine) TouchEvents() <-chan bool {
-	return m.touchEvents
-}
-
 func (m *MockMachine) ToggleMotor(on bool) {
 	// nothing
 }
@@ -58,4 +52,33 @@ func (m *MockMachine) ToggleBuzzer(on bool) {
 
 func (m *MockMachine) DiagnosticNoise() {
 	// nothing
+}
+
+func (m *MockMachine) SubscribeTouches() (*TouchesClient, error) {
+	client := &TouchesClient{
+		Touches:    make(chan bool),
+		cancelChan: make(chan struct{}),
+		machine:    m,
+	}
+
+	m.nextTouchesClient.Lock()
+	client.Id = m.nextTouchesClient.id
+	m.nextTouchesClient.id++
+	m.nextTouchesClient.Unlock()
+
+	m.touchesClients[client.Id] = client
+
+	return client, nil
+}
+
+func (m *MockMachine) notifyTouchesClients(touch bool) {
+	for _, client := range m.touchesClients {
+		client.Touches <- touch
+	}
+}
+
+func (m *MockMachine) unsubscribeTouches(client *TouchesClient) error {
+	delete(m.touchesClients, client.Id)
+	close(client.cancelChan)
+	return nil
 }
