@@ -146,14 +146,6 @@ func sweetdMain() error {
 		return errors.Errorf("Unknown updater type %v", cfg.Updater)
 	}
 
-	// TODO(dave): remove this?
-	//artifactName, err := u.GetArtifactName()
-	//if err != nil {
-	//	log.Error("Could not obtain artifact name. Continuing though...")
-	//} else {
-	//	log.Infof("Updater returned artifact name %v", artifactName)
-	//}
-
 	// The hardware controller
 	var m machine.Machine
 
@@ -272,39 +264,6 @@ func sweetdMain() error {
 
 		log.Infof("Stopped pairing controller.")
 	}()
-
-	// Create a gRPC server for remote control of the dispenser
-	//if len(cfg.Listeners) > 0 {
-	//	grpcServer := grpc.NewServer()
-	//
-	//	sweetrpc.RegisterSweetServer(grpcServer, newRPCServer(dispenser, &rpcServerConfig{
-	//		version: version,
-	//		commit:  commit,
-	//	}))
-	//
-	//	// Next, Start the gRPC server listening for HTTP/2 connections.
-	//	for _, listener := range cfg.Listeners {
-	//		lis, err := net.Listen(listener.Network(), listener.String())
-	//		if err != nil {
-	//			return errors.Errorf("RPC server unable to listen on %s", listener.String())
-	//		}
-	//
-	//		defer func() {
-	//			err := lis.Close()
-	//			if err != nil {
-	//				log.Errorf("Could not properly close: %v", err)
-	//			}
-	//		}()
-	//
-	//		go func() {
-	//			log.Infof("RPC server listening on %s", lis.Addr())
-	//			err := grpcServer.Serve(lis)
-	//			if err != nil {
-	//				log.Errorf("Could not serve: %v", err)
-	//			}
-	//		}()
-	//	}
-	//}
 
 	// Handle interrupt signals correctly
 	go func() {
