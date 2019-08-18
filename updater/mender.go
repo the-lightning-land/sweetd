@@ -83,6 +83,10 @@ func (m *MenderUpdater) GetUpdate(id string) (*Update, error) {
 		return nil, errors.Errorf("Could not get update with id %s: %v", id, err)
 	}
 
+	if update == nil {
+		return nil, nil
+	}
+
 	result := &Update{
 		Id:      update.Id,
 		Started: update.Started,
@@ -138,14 +142,14 @@ func (m *MenderUpdater) StartUpdate(url string) (*Update, error) {
 		stdoutScanner := bufio.NewScanner(stdoutReader)
 		for stdoutScanner.Scan() {
 			text := stdoutScanner.Text()
-			m.log.Infof("%s", text)
+			m.log.Debugf("%s", text)
 
 			if matches := sizeRegexp.FindStringSubmatch(text); len(matches) == 2 {
 				m.log.Infof("Total size of update is %s bytes", matches[1])
 			}
 
 			if matches := progressRegex.FindStringSubmatch(text); len(matches) == 3 {
-				m.log.Infof("Update progressed %s%", matches[1])
+				m.log.Infof("Update progressed %s%%", matches[1])
 				progress, err := strconv.ParseUint(matches[1], 10, 8)
 				if err != nil {
 					m.log.Errorf("Could not parse progress: %v", err)
@@ -215,17 +219,19 @@ func (m *MenderUpdater) StartUpdate(url string) (*Update, error) {
 	return m.update, nil
 }
 
-func (m *MenderUpdater) CancelUpdate() error {
+func (m *MenderUpdater) CancelUpdate(id string) (*Update, error) {
 	if atomic.LoadInt32(&m.updating) != 1 {
-		return errors.New("no update in progress")
+		return nil, errors.New("no update in progress")
 	}
 
 	err := m.updateCmd.Process.Kill()
 	if err != nil {
-		return errors.Errorf("could not kill update: %v", err)
+		return nil, errors.Errorf("could not kill update: %v", err)
 	}
 
-	return nil
+	m.update.State = StateCancelled
+
+	return m.update, nil
 }
 
 func (m *MenderUpdater) SubscribeUpdate(id string) (*UpdateClient, error) {
@@ -258,26 +264,30 @@ func (m *MenderUpdater) notifyUpdateClients() {
 	}
 }
 
-func (m *MenderUpdater) UnsubscribeUpdate(client *UpdateClient) error {
+func (m *MenderUpdater) unsubscribeUpdate(client *UpdateClient) error {
 	delete(m.clients, client.Id)
 	close(client.cancelChan)
 	return nil
 }
 
-func (m *MenderUpdater) CommitUpdate() error {
+func (m *MenderUpdater) CommitUpdate(id string) (*Update, error) {
 	_, err := exec.Command("mender", "-commit").Output()
 	if err != nil {
-		return errors.Errorf("Could not retrieve artifact name: %v", err)
+		return nil, errors.Errorf("Could not retrieve artifact name: %v", err)
 	}
 
-	return nil
+	m.update.State = StateCompleted
+
+	return m.update, nil
 }
 
-func (m *MenderUpdater) RollbackUpdate() error {
+func (m *MenderUpdater) RejectUpdate(id string) (*Update, error) {
 	_, err := exec.Command("mender", "-rollback").Output()
 	if err != nil {
-		return errors.Errorf("Could not retrieve artifact name: %v", err)
+		return nil, errors.Errorf("Could not retrieve artifact name: %v", err)
 	}
 
-	return nil
+	m.update.State = StateRejected
+
+	return m.update, nil
 }

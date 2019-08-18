@@ -20,14 +20,26 @@ func (n *NoopUpdater) StartUpdate(url string) (*Update, error) {
 	return nil, errors.New("no updater available")
 }
 
-func (n *NoopUpdater) CancelUpdate() error {
-	return errors.New("no updater available")
+func (n *NoopUpdater) GetUpdate(url string) (*Update, error) {
+	return nil, errors.New("no updater available")
+}
+
+func (n *NoopUpdater) CancelUpdate(id string) (*Update, error) {
+	return nil, errors.New("no updater available")
 }
 
 func (n *NoopUpdater) SubscribeUpdate(id string) (*UpdateClient, error) {
 	return nil, errors.New("no updater available")
 }
 
-func (n *NoopUpdater) UnsubscribeUpdate(client *UpdateClient) error {
+func (n *NoopUpdater) unsubscribeUpdate(client *UpdateClient) error {
 	return errors.New("no updater available")
+}
+
+func (m *NoopUpdater) CommitUpdate(id string) (*Update, error) {
+	return nil, errors.New("no updater available")
+}
+
+func (m *NoopUpdater) RejectUpdate(id string) (*Update, error) {
+	return nil, errors.New("no updater available")
 }

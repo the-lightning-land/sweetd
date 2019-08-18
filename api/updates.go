@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/the-lightning-land/sweetd/updater"
 	"net/http"
 	"time"
 )
@@ -13,13 +14,11 @@ type postUpdateRequest struct {
 	Url string `json:"url"`
 }
 
-type postUpdateResponse struct {
-	Id      string    `json:"id"`
-	Started time.Time `json:"started"`
-	Url     string    `json:"url"`
+type patchUpdateRequest struct {
+	State string `json:"state"`
 }
 
-type getUpdateEventsEvent struct {
+type updateResponse struct {
 	Id           string    `json:"id"`
 	Started      time.Time `json:"started"`
 	Url          string    `json:"url"`
@@ -38,62 +37,97 @@ func (a *Api) handlePostUpdate() http.HandlerFunc {
 			return
 		}
 
-		update, err := a.dispenser.Update(req.Url)
+		update, err := a.dispenser.StartUpdate(req.Url)
 		if err != nil {
 			a.jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		a.jsonResponse(w, &postUpdateResponse{
-			Id:      update.Id,
-			Started: update.Started,
-			Url:     update.Url,
+		a.jsonResponse(w, &updateResponse{
+			Id:           update.Id,
+			Started:      update.Started,
+			Url:          update.Url,
+			State:        update.State,
+			Progress:     update.Progress,
+			ShouldReboot: update.ShouldReboot,
+			ShouldCommit: update.ShouldCommit,
 		}, http.StatusOK)
 	}
 }
 
 func (a *Api) handleGetUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		req := postUpdateRequest{}
-		err := json.NewDecoder(r.Body).Decode(&req)
+		vars := mux.Vars(r)
+		id := vars["id"]
+
+		update, err := a.dispenser.GetUpdate(id)
 		if err != nil {
 			a.jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		update, err := a.dispenser.Update(req.Url)
-		if err != nil {
-			a.jsonError(w, err.Error(), http.StatusInternalServerError)
+		if update == nil {
+			a.jsonError(w, fmt.Sprintf("No update with id %s found.", id), http.StatusNotFound)
 			return
 		}
 
-		a.jsonResponse(w, &postUpdateResponse{
-			Id:      update.Id,
-			Started: update.Started,
-			Url:     update.Url,
+		a.jsonResponse(w, &updateResponse{
+			Id:           update.Id,
+			Started:      update.Started,
+			Url:          update.Url,
+			State:        update.State,
+			Progress:     update.Progress,
+			ShouldReboot: update.ShouldReboot,
+			ShouldCommit: update.ShouldCommit,
 		}, http.StatusOK)
 	}
 }
 
 func (a *Api) handlePatchUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		req := postUpdateRequest{}
+		vars := mux.Vars(r)
+		id := vars["id"]
+
+		req := patchUpdateRequest{}
 		err := json.NewDecoder(r.Body).Decode(&req)
 		if err != nil {
 			a.jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		update, err := a.dispenser.Update(req.Url)
-		if err != nil {
-			a.jsonError(w, err.Error(), http.StatusInternalServerError)
+		var update *updater.Update
+
+		if req.State == updater.StateCancelled {
+			update, err = a.dispenser.CancelUpdate(id)
+			if err != nil {
+				a.jsonError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else if req.State == updater.StateCompleted {
+			update, err = a.dispenser.CommitUpdate(id)
+			if err != nil {
+				a.jsonError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else if req.State == updater.StateRejected {
+			update, err = a.dispenser.RejectUpdate(id)
+			if err != nil {
+				a.jsonError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			a.jsonError(w, fmt.Sprint("Can only cancel, commit or reject an update."), http.StatusBadRequest)
 			return
 		}
 
-		a.jsonResponse(w, &postUpdateResponse{
-			Id:      update.Id,
-			Started: update.Started,
-			Url:     update.Url,
+		a.jsonResponse(w, &updateResponse{
+			Id:           update.Id,
+			Started:      update.Started,
+			Url:          update.Url,
+			State:        update.State,
+			Progress:     update.Progress,
+			ShouldReboot: update.ShouldReboot,
+			ShouldCommit: update.ShouldCommit,
 		}, http.StatusOK)
 	}
 }
@@ -167,7 +201,7 @@ func (a *Api) handleGetUpdateEvents() http.HandlerFunc {
 						return
 					}
 
-					err := c.WriteJSON(&getUpdateEventsEvent{
+					err := c.WriteJSON(&updateResponse{
 						Id:           update.Id,
 						Started:      update.Started,
 						Url:          update.Url,

@@ -9,5 +9,5 @@ type UpdateClient struct {
 }
 
 func (c *UpdateClient) Cancel() error {
-	return c.updater.UnsubscribeUpdate(c)
+	return c.updater.unsubscribeUpdate(c)
 }

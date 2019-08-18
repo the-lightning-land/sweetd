@@ -30,7 +30,9 @@ func New(config *Config) *Api {
 		api.log = noopLogger{}
 	}
 
-	api.router.Handle("/api/v1/dispenser", api.handleGetStatus()).Methods(http.MethodGet)
+	api.router.Handle("/api/v1/dispenser", api.handleGetDispenser()).Methods(http.MethodGet)
+	api.router.Handle("/api/v1/dispenser", api.handlePatchDispenser()).Methods(http.MethodPatch)
+	api.router.Handle("/api/v1/dispenser/events", api.handleGetDispenser()).Methods(http.MethodGet)
 
 	api.router.Handle("/api/v1/updates", api.handlePostUpdate()).Methods(http.MethodPost)
 	api.router.Handle("/api/v1/updates/{id}", api.handleGetUpdate()).Methods(http.MethodGet)
@@ -38,16 +40,13 @@ func New(config *Config) *Api {
 	api.router.Handle("/api/v1/updates/{id}/events", api.handleGetUpdateEvents()).Methods(http.MethodGet)
 
 	api.router.Handle("/api/v1/nodes", api.handlePostUpdate()).Methods(http.MethodPost)
+	api.router.Handle("/api/v1/nodes", api.handlePostUpdate()).Methods(http.MethodGet)
+	api.router.Handle("/api/v1/nodes/{id}", api.handlePostUpdate()).Methods(http.MethodGet)
+	api.router.Handle("/api/v1/nodes/{id}", api.handlePostUpdate()).Methods(http.MethodPatch)
 
 	api.router.Handle("/api/v1/networks", api.handlePostUpdate()).Methods(http.MethodPost)
-
-	// /system
-	// /system/unlock
-	// /system/updates
-	// /system/time
-	// /system/network
-	// /nodes
-	// through Tor (beta)
+	api.router.Handle("/api/v1/networks/{id}", api.handlePostUpdate()).Methods(http.MethodPatch)
+	api.router.Handle("/api/v1/networks/events", api.handlePostUpdate()).Methods(http.MethodGet)
 
 	return api
 }

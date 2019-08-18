@@ -9,6 +9,7 @@ import (
 	"github.com/the-lightning-land/sweetd/machine"
 	"github.com/the-lightning-land/sweetd/node"
 	"github.com/the-lightning-land/sweetd/pos"
+	"github.com/the-lightning-land/sweetd/reboot"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/sweetlog"
 	"github.com/the-lightning-land/sweetd/updater"
@@ -17,51 +18,45 @@ import (
 	"time"
 )
 
+type State string
+
+const StateStarting = "starting"
+const StateRunning State = "running"
+const StateStopping State = "stopping"
+
+type nextClient struct {
+	sync.Mutex
+	id uint32
+}
+
 type Dispenser struct {
-	machine              machine.Machine
-	AccessPoint          ap.Ap
-	db                   *sweetdb.DB
-	DispenseOnTouch      bool
-	BuzzOnDispense       bool
-	done                 chan struct{}
-	payments             chan *node.Invoice
-	LightningNodeUri     string
-	dispenses            chan bool
-	dispenseClients      map[uint32]*DispenseClient
-	dispenseClientMtx    sync.Mutex
-	nextDispenseClientID uint32
-	memoPrefix           string
-	updater              updater.Updater
-	node                 node.Node
-	invoicesClient       *node.InvoicesClient
-	pos                  *pos.Pos
-	posOnion             *tor.OnionService
-	sweetLog             *sweetlog.SweetLog
-	log                  Logger
-	tor                  *tor.Tor
-	apiListeners         []net.Listener
-	apiOnion             *tor.OnionService
-	api                  Api
-}
-
-type DispenseClient struct {
-	Dispenses  chan bool
-	Id         uint32
-	cancelChan chan struct{}
-	dispenser  *Dispenser
-}
-
-type Config struct {
-	Machine     machine.Machine
-	AccessPoint ap.Ap
-	DB          *sweetdb.DB
-	MemoPrefix  string
-	Updater     updater.Updater
-	Pos         *pos.Pos
-	SweetLog    *sweetlog.SweetLog
-	Logger      Logger
-	Tor         *tor.Tor
-	Api         Api
+	machine          machine.Machine
+	AccessPoint      ap.Ap
+	db               *sweetdb.DB
+	DispenseOnTouch  bool
+	BuzzOnDispense   bool
+	done             chan struct{}
+	payments         chan *node.Invoice
+	LightningNodeUri string
+	dispenses        chan bool
+	dispenseClients  map[uint32]*DispenseClient
+	nextClient       nextClient
+	memoPrefix       string
+	updater          updater.Updater
+	// Deprecated: use nodes instead
+	node node.Node
+	// List of registered nodes
+	nodes          []node.Node
+	invoicesClient *node.InvoicesClient
+	pos            *pos.Pos
+	posOnion       *tor.OnionService
+	sweetLog       *sweetlog.SweetLog
+	log            Logger
+	tor            *tor.Tor
+	apiListeners   []net.Listener
+	apiOnion       *tor.OnionService
+	api            Api
+	state          State
 }
 
 func NewDispenser(config *Config) *Dispenser {
@@ -82,6 +77,7 @@ func NewDispenser(config *Config) *Dispenser {
 		log:             config.Logger,
 		tor:             config.Tor,
 		api:             config.Api,
+		state:           StateStarting,
 	}
 
 	config.Api.SetDispenser(dispenser)
@@ -165,6 +161,10 @@ func (d *Dispenser) Run() error {
 			d.log.Errorf("Could not close touch event subscription: %v", err)
 		}
 	}()
+
+	d.state = StateRunning
+
+	d.log.Infof("Successfully started dispenser")
 
 	for {
 		select {
@@ -308,6 +308,10 @@ func (d *Dispenser) SetWifiConnection(connection *sweetdb.WifiConnection) error 
 	return nil
 }
 
+func (d *Dispenser) GetState() State {
+	return d.state
+}
+
 func (d *Dispenser) GetName() (string, error) {
 	d.log.Infof("Getting name")
 
@@ -446,7 +450,31 @@ func (d *Dispenser) StopPos() error {
 	return nil
 }
 
-func (d *Dispenser) Shutdown() {
+func (d *Dispenser) Reboot() error {
+	d.state = StateStopping
+
+	err := reboot.Reboot()
+	if err != nil {
+		return errors.Errorf("Could not reboot: %v", err)
+	}
+
+	return nil
+}
+
+func (d *Dispenser) ShutDown() error {
+	d.state = StateStopping
+
+	err := reboot.ShutDown()
+	if err != nil {
+		return errors.Errorf("Could not shut down: %v", err)
+	}
+
+	return nil
+}
+
+func (d *Dispenser) Stop() {
+	d.state = StateStopping
+
 	for _, lis := range d.apiListeners {
 		err := lis.Close()
 		if err != nil {
@@ -478,18 +506,12 @@ func (d *Dispenser) SubscribeDispenses() *DispenseClient {
 		dispenser:  d,
 	}
 
-	d.dispenseClientMtx.Lock()
-	client.Id = d.nextDispenseClientID
-	d.nextDispenseClientID++
-	d.dispenseClientMtx.Unlock()
+	d.nextClient.Lock()
+	client.Id = d.nextClient.id
+	d.nextClient.id++
+	d.nextClient.Unlock()
 
 	d.dispenseClients[client.Id] = client
 
 	return client
-}
-
-func (c *DispenseClient) Cancel() {
-	delete(c.dispenser.dispenseClients, c.Id)
-
-	close(c.cancelChan)
 }

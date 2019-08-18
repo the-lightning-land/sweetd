@@ -127,7 +127,7 @@ func sweetdMain() error {
 		}
 	}()
 
-	// The updater
+	// The updater which takes care of system updates
 	var u updater.Updater
 
 	switch cfg.Updater {
@@ -273,10 +273,10 @@ func sweetdMain() error {
 		sig := <-signals
 		log.Info(sig)
 		log.Info("Received an interrupt, stopping dispenser...")
-		dispenser.Shutdown()
+		dispenser.Stop()
 	}()
 
-	// blocks until the dispenser is shut down
+	// blocks until the dispenser is stopped
 	err = dispenser.Run()
 	if err != nil {
 		return errors.Errorf("Failed running dispenser: %v", err)

@@ -24,7 +24,10 @@ type Update struct {
 type Updater interface {
 	GetVersion() (string, error)
 	StartUpdate(url string) (*Update, error)
-	CancelUpdate() error
+	GetUpdate(id string) (*Update, error)
+	CancelUpdate(id string) (*Update, error)
 	SubscribeUpdate(id string) (*UpdateClient, error)
-	UnsubscribeUpdate(client *UpdateClient) error
+	unsubscribeUpdate(client *UpdateClient) error
+	CommitUpdate(id string) (*Update, error)
+	RejectUpdate(id string) (*Update, error)
 }
