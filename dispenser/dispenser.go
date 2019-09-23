@@ -157,7 +157,7 @@ func NewDispenser(config *Config) *Dispenser {
 	})
 
 	router := mux.NewRouter()
-	router.PathPrefix("/api/v1").Handler(apiHandler)
+	router.PathPrefix("/api/v1").Handler(http.StripPrefix("/api/v1", apiHandler))
 	router.PathPrefix("/").Handler(appHandler)
 
 	dispenser.apiHandler = router

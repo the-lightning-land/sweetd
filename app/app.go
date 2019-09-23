@@ -8,8 +8,7 @@ import (
 
 type App struct {
 	http.Handler
-	log    Logger
-	router *mux.Router
+	log Logger
 }
 
 type Config struct {
@@ -25,11 +24,13 @@ func NewHandler(config *Config) http.Handler {
 		app.log = noopLogger{}
 	}
 
-	app.router = mux.NewRouter()
+	router := mux.NewRouter()
 
 	box := packr.New("app", "./build")
-	app.router.Use(app.createLoggingMiddleware(app.log.Debugf))
-	app.router.PathPrefix("/").Handler(app.handleStatic(box)).Methods(http.MethodGet)
+	router.Use(app.createLoggingMiddleware(app.log.Debugf))
+	router.PathPrefix("/").Handler(app.handleStatic(box)).Methods(http.MethodGet)
+
+	app.Handler = router
 
 	return app
 }
