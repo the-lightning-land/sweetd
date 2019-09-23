@@ -16,12 +16,6 @@ var (
 	apiPrivateKeyKey   = []byte("apiPrivateKey")
 )
 
-type LightningNode struct {
-	Uri      string `json:"uri"`
-	Cert     []byte `json:"cert"`
-	Macaroon []byte `json:"macaroon"`
-}
-
 type WifiConnection struct {
 	Ssid string `json:"ssid"`
 	Psk  string `json:"psk"`
@@ -43,20 +37,6 @@ func (db *DB) GetApiPrivateKey() (*rsa.PrivateKey, error) {
 	return db.getPrivateKey(settingsBucket, apiPrivateKeyKey)
 }
 
-func (db *DB) SetLightningNode(lightningNode *LightningNode) error {
-	return db.setJSON(settingsBucket, lightningNodeKey, lightningNode)
-}
-
-func (db *DB) GetLightningNode() (*LightningNode, error) {
-	var lightningNode = &LightningNode{}
-
-	if err := db.getJSON(settingsBucket, lightningNodeKey, &lightningNode); err == nil {
-		return nil, err
-	}
-
-	return lightningNode, nil
-}
-
 func (db *DB) SetWifiConnection(wifiConnection *WifiConnection) error {
 	return db.setJSON(settingsBucket, wifiConnectionKey, wifiConnection)
 }
@@ -64,7 +44,7 @@ func (db *DB) SetWifiConnection(wifiConnection *WifiConnection) error {
 func (db *DB) GetWifiConnection() (*WifiConnection, error) {
 	var wifiConnection = &WifiConnection{}
 
-	if err := db.getJSON(settingsBucket, wifiConnectionKey, &wifiConnection); err == nil {
+	if err := db.getJSON(settingsBucket, wifiConnectionKey, &wifiConnection); err != nil {
 		return nil, err
 	}
 
@@ -115,7 +95,7 @@ func (db *DB) SetDispenseOnTouch(dispenseOnTouch bool) error {
 func (db *DB) GetDispenseOnTouch() (bool, error) {
 	var dispenseOnTouch bool
 
-	if err := db.getJSON(settingsBucket, dispenseOnTouchKey, &dispenseOnTouch); err == nil {
+	if err := db.getJSON(settingsBucket, dispenseOnTouchKey, &dispenseOnTouch); err != nil {
 		return false, err
 	}
 
@@ -129,7 +109,7 @@ func (db *DB) SetBuzzOnDispense(buzzOnDispense bool) error {
 func (db *DB) GetBuzzOnDispense() (bool, error) {
 	var buzzOnDispense bool
 
-	if err := db.getJSON(settingsBucket, buzzOnDispenseKey, &buzzOnDispense); err == nil {
+	if err := db.getJSON(settingsBucket, buzzOnDispenseKey, &buzzOnDispense); err != nil {
 		return false, err
 	}
 

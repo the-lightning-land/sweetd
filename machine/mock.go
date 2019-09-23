@@ -56,7 +56,7 @@ func (m *MockMachine) DiagnosticNoise() {
 	// nothing
 }
 
-func (m *MockMachine) SubscribeTouches() (*TouchesClient, error) {
+func (m *MockMachine) SubscribeTouches() *TouchesClient {
 	client := &TouchesClient{
 		Touches:    make(chan bool),
 		cancelChan: make(chan struct{}),
@@ -70,7 +70,7 @@ func (m *MockMachine) SubscribeTouches() (*TouchesClient, error) {
 
 	m.touchesClients[client.Id] = client
 
-	return client, nil
+	return client
 }
 
 func (m *MockMachine) notifyTouchesClients(touch bool) {
@@ -79,8 +79,7 @@ func (m *MockMachine) notifyTouchesClients(touch bool) {
 	}
 }
 
-func (m *MockMachine) unsubscribeTouches(client *TouchesClient) error {
+func (m *MockMachine) unsubscribeTouches(client *TouchesClient) {
 	delete(m.touchesClients, client.Id)
 	close(client.cancelChan)
-	return nil
 }

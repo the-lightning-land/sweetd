@@ -14,6 +14,6 @@ type TouchesClient struct {
 	machine    Machine
 }
 
-func (c *TouchesClient) Cancel() error {
-	return c.machine.unsubscribeTouches(c)
+func (c *TouchesClient) Cancel() {
+	c.machine.unsubscribeTouches(c)
 }

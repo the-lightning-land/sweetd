@@ -1,29 +1,43 @@
 package pos
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"encoding/json"
-	"github.com/go-errors/errors"
 	"github.com/gobuffalo/packr/v2"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-	"github.com/the-lightning-land/sweetd/node"
-	"net"
+	"github.com/the-lightning-land/sweetd/lightning"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
 
-type Pos struct {
-	log    Logger
-	node   node.Node
-	router *mux.Router
+type Dispenser interface {
 }
 
-func NewPos(config *Config) (*Pos, error) {
-	pos := &Pos{}
+type Config struct {
+	Logger    Logger
+	Dispenser Dispenser
+}
+
+type Node struct {
+	lightning.Node
+	Id          string
+	Name        string
+	Description string
+	Order       int
+}
+
+type Handler struct {
+	http.Handler
+	log       Logger
+	dispenser Dispenser
+	// Deprecated: use dispenser methods directly
+	node *Node
+}
+
+func NewHandler(config *Config) *Handler {
+	pos := &Handler{}
 
 	if config.Logger != nil {
 		pos.log = config.Logger
@@ -31,10 +45,12 @@ func NewPos(config *Config) (*Pos, error) {
 		pos.log = noopLogger{}
 	}
 
-	pos.router = mux.NewRouter()
-	pos.router.Use(pos.loggingMiddleware)
+	pos.dispenser = config.Dispenser
 
-	api := pos.router.PathPrefix("/api").Subrouter()
+	router := mux.NewRouter()
+
+	api := router.PathPrefix("/api").Subrouter()
+	api.Use(pos.createLoggingMiddleware(pos.log.Infof))
 	api.Use(pos.localhostMiddleware)
 	api.Use(pos.availabilityMiddleware)
 	api.Handle("/invoices/{rHash}/status", pos.handleStreamInvoiceStatus()).Methods(http.MethodGet)
@@ -43,52 +59,24 @@ func NewPos(config *Config) (*Pos, error) {
 	api.Use(mux.CORSMethodMiddleware(api))
 
 	box := packr.New("web", "./out")
-	pos.router.PathPrefix("/").Handler(pos.handleStatic(box)).Methods(http.MethodGet)
+	router.Use(pos.createLoggingMiddleware(pos.log.Debugf))
+	router.PathPrefix("/").Handler(pos.handleStatic(box)).Methods(http.MethodGet)
 
-	return pos, nil
+	pos.Handler = router
+
+	return pos
 }
 
-func (p *Pos) GenerateKey() (*rsa.PrivateKey, error) {
-	// Generate a V2 RSA 1024 bit key
-	return rsa.GenerateKey(rand.Reader, 1024)
-}
-
-func (p *Pos) Serve(l net.Listener) error {
-	err := http.Serve(l, p.router)
-	if err != nil {
-		return errors.Errorf("Unable to serve PoS: %v", err)
+func (p *Handler) createLoggingMiddleware(log func(string, ...interface{})) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log("Accessing %v", r.RequestURI)
+			next.ServeHTTP(w, r)
+		})
 	}
-
-	return nil
 }
 
-func (p *Pos) SetNode(node node.Node) error {
-	if p.node != nil {
-		err := p.RemoveNode()
-		if err != nil {
-			p.log.Errorf("Could not remove previous node: %v", err)
-		}
-	}
-
-	p.node = node
-
-	return nil
-}
-
-func (p *Pos) RemoveNode() error {
-	p.node = nil
-
-	return nil
-}
-
-func (p *Pos) loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p.log.Infof("Accessing %v", r.RequestURI)
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (p *Pos) localhostMiddleware(next http.Handler) http.Handler {
+func (p *Handler) localhostMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.Referer(), "http://localhost:3001") {
 			w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3001")
@@ -98,7 +86,7 @@ func (p *Pos) localhostMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (p *Pos) availabilityMiddleware(next http.Handler) http.Handler {
+func (p *Handler) availabilityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p.node == nil {
 			p.log.Errorf("PoS request failed due to unavailable node")
@@ -110,7 +98,7 @@ func (p *Pos) availabilityMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (p *Pos) handleStatic(box *packr.Box) http.Handler {
+func (p *Handler) handleStatic(box *packr.Box) http.Handler {
 	return http.FileServer(box)
 }
 
@@ -132,7 +120,7 @@ func checkOrigin(r *http.Request) bool {
 	return strings.EqualFold(u.Host, r.Host)
 }
 
-func (p *Pos) handleStreamInvoiceStatus() http.HandlerFunc {
+func (p *Handler) handleStreamInvoiceStatus() http.HandlerFunc {
 	upgrader := &websocket.Upgrader{
 		CheckOrigin: checkOrigin,
 	}
@@ -215,7 +203,7 @@ func (p *Pos) handleStreamInvoiceStatus() http.HandlerFunc {
 	}
 }
 
-func (p *Pos) handleGetInvoice() http.HandlerFunc {
+func (p *Handler) handleGetInvoice() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		rHash := vars["rHash"]
@@ -239,9 +227,9 @@ func (p *Pos) handleGetInvoice() http.HandlerFunc {
 	}
 }
 
-func (p *Pos) handleAddInvoice() http.HandlerFunc {
+func (p *Handler) handleAddInvoice() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		invoice, err := p.node.AddInvoice(&node.InvoiceRequest{
+		invoice, err := p.node.AddInvoice(&lightning.InvoiceRequest{
 		})
 		if err != nil {
 			p.jsonError(w, err.Error(), http.StatusInternalServerError)
@@ -259,4 +247,14 @@ func (p *Pos) handleAddInvoice() http.HandlerFunc {
 			return
 		}
 	}
+}
+
+type invoiceMessage struct {
+	RHash          string `json:"r_hash"`
+	PaymentRequest string `json:"payment_request"`
+	Settled        bool   `json:"settled"`
+}
+
+type invoiceStatusMessage struct {
+	Settled bool `json:"settled"`
 }

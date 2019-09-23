@@ -5,18 +5,19 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/the-lightning-land/sweetd/ap"
-	"github.com/the-lightning-land/sweetd/api"
 	"github.com/the-lightning-land/sweetd/dispenser"
 	"github.com/the-lightning-land/sweetd/machine"
+	"github.com/the-lightning-land/sweetd/network"
+	"github.com/the-lightning-land/sweetd/nodeman"
 	"github.com/the-lightning-land/sweetd/pairing"
-	"github.com/the-lightning-land/sweetd/pos"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/sweetlog"
 	"github.com/the-lightning-land/sweetd/updater"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+
 	// Blank import to set up profiling HTTP handlers.
 	_ "net/http/pprof"
 )
@@ -94,36 +95,34 @@ func sweetdMain() error {
 		}
 	}()
 
-	// The network access point, which acts as the core connectivity
+	// The network, which acts as the core connectivity
 	// provider for all other components
-	var a ap.Ap
+	var net network.Network
 
-	switch cfg.Net {
-	case "dispenser":
-		a, err = ap.NewDispenserAp(&ap.DispenserApConfig{
-			Interface: "wlan0",
+	if cfg.Net.Interface != "" {
+		net = network.NewWpaNetwork(&network.Config{
+			Interface: cfg.Net.Interface,
+			Logger:    log.WithField("system", "network"),
 		})
 
-		log.Info("Created Candy Dispenser access point.")
-	case "mock":
-		a = ap.NewMockAp()
+		log.Info("Created network.")
+	} else {
+		net = network.NewMockNetwork()
 
-		log.Info("Created a mock access point.")
-	default:
-		return errors.Errorf("Unknown networking type %v", cfg.Machine)
+		log.Info("Created mock network.")
 	}
 
-	err = a.Start()
+	err = net.Start()
 	if err != nil {
-		return errors.Errorf("Could not start access point: %v", err)
+		return errors.Errorf("Could not start network: %v", err)
 	}
 
 	defer func() {
-		err := a.Stop()
+		err = net.Stop()
 		if err != nil {
-			log.Errorf("Could not properly shut down access point: %v", err)
+			log.Errorf("Could not properly shut down network: %v", err)
 		} else {
-			log.Info("Stopped access point.")
+			log.Info("Stopped network.")
 		}
 	}()
 
@@ -137,7 +136,7 @@ func sweetdMain() error {
 		log.Info("Created noop updater.")
 	case "mender":
 		u, err = updater.NewMenderUpdater(&updater.MenderUpdaterConfig{
-			Logger: log.New().WithField("system", "updater"),
+			Logger: log.WithField("system", "updater"),
 			DB:     sweetDB,
 		})
 
@@ -184,7 +183,7 @@ func sweetdMain() error {
 	t, err := tor.Start(nil, &tor.StartConf{
 		ExePath:         cfg.Tor.Path,
 		TempDataDirBase: os.TempDir(),
-		DebugWriter:     log.New().WithField("system", "tor").WriterLevel(log.DebugLevel),
+		DebugWriter:     log.WithField("system", "tor").WriterLevel(log.DebugLevel),
 	})
 	if err != nil {
 		return errors.Errorf("Could not start tor: %v", err)
@@ -201,70 +200,63 @@ func sweetdMain() error {
 		}
 	}()
 
-	// create subsystem responsible for the point of sale app
-	pos, err := pos.NewPos(&pos.Config{
-		Logger: log.New().WithField("system", "pos"),
+	nodeman := nodeman.New(&nodeman.Config{
+		NodesDataDir: filepath.Join(cfg.DataDir, "nodes"),
+		DB:           sweetDB,
+		LogCreator: func(node string) nodeman.Logger {
+			logger := log.WithField("system", "nodeman")
+
+			if node != "" {
+				logger = logger.WithField("node", node)
+			}
+
+			return logger
+		},
 	})
-	if err != nil {
-		return errors.Errorf("Could not create PoS: %v", err)
-	}
-
-	log.Infof("Created PoS")
-
-	// create subsystem responsible for the point of sale app
-	api := api.New(&api.Config{
-		Log: log.New().WithField("system", "api"),
-	})
-	if err != nil {
-		return errors.Errorf("Could not create api: %v", err)
-	}
-
-	log.Infof("Created API")
 
 	// central controller for everything the dispenser does
 	dispenser := dispenser.NewDispenser(&dispenser.Config{
-		Machine:     m,
-		AccessPoint: a,
-		DB:          sweetDB,
-		MemoPrefix:  cfg.MemoPrefix,
-		Updater:     u,
-		Pos:         pos,
-		SweetLog:    sweetLog,
-		Logger:      log.New().WithField("system", "dispenser"),
-		Tor:         t,
-		Api:         api,
+		Nodeman:  nodeman,
+		Machine:  m,
+		DB:       sweetDB,
+		Updater:  u,
+		SweetLog: sweetLog,
+		Logger:   log.WithField("system", "dispenser"),
+		Tor:      t,
+		Network:  net,
 	})
 
 	log.Infof("Created dispenser.")
 
-	// create subsystem responsible for pairing
-	pairingController, err := pairing.NewController(&pairing.Config{
-		Logger:      log.New().WithField("system", "pairing"),
-		AdapterId:   "hci0",
-		AccessPoint: a,
-		Dispenser:   dispenser,
-	})
-	if err != nil {
-		return errors.Errorf("Could not create pairing controller: %v", err)
-	}
-
-	log.Infof("Created pairing controller.")
-
-	err = pairingController.Start()
-	if err != nil {
-		return errors.Errorf("Could not start pairing controller: %v", err)
-	}
-
-	log.Infof("Started pairing controller.")
-
-	defer func() {
-		err := pairingController.Stop()
+	if cfg.Pairing.Interface != "" {
+		// create subsystem responsible for pairing
+		pairingController, err := pairing.NewController(&pairing.Config{
+			Logger:    log.WithField("system", "pairing"),
+			AdapterId: cfg.Pairing.Interface,
+			Dispenser: dispenser,
+		})
 		if err != nil {
-			log.Errorf("Could not properly shut down pairing controller: %v", err)
+			return errors.Errorf("Could not create pairing controller: %v", err)
 		}
 
-		log.Infof("Stopped pairing controller.")
-	}()
+		log.Infof("Created pairing controller.")
+
+		err = pairingController.Start()
+		if err != nil {
+			return errors.Errorf("Could not start pairing controller: %v", err)
+		}
+
+		log.Infof("Started pairing controller.")
+
+		defer func() {
+			err := pairingController.Stop()
+			if err != nil {
+				log.Errorf("Could not properly shut down pairing controller: %v", err)
+			}
+
+			log.Infof("Stopped pairing controller.")
+		}()
+	}
 
 	// Handle interrupt signals correctly
 	go func() {
@@ -277,12 +269,12 @@ func sweetdMain() error {
 	}()
 
 	// blocks until the dispenser is stopped
-	err = dispenser.Run()
+	err = dispenser.RunAndWait()
 	if err != nil {
-		return errors.Errorf("Failed running dispenser: %v", err)
+		return errors.Errorf("unable to run: %v", err)
 	}
 
-	// finish with no error
+	// finish without error
 	return nil
 }
 

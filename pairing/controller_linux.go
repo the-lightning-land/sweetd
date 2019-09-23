@@ -30,7 +30,7 @@ const (
 	networkAvailabilityStatus = candyServiceUuidPrefix + "0001" + uuidSuffix
 	ipAddress                 = candyServiceUuidPrefix + "0002" + uuidSuffix
 	wifiScanSignal            = candyServiceUuidPrefix + "0003" + uuidSuffix
-	wifiScanList              = candyServiceUuidPrefix + "0004" + uuidSuffix
+	discoveredWifiSsid        = candyServiceUuidPrefix + "0004" + uuidSuffix
 	wifiSsidString            = candyServiceUuidPrefix + "0005" + uuidSuffix
 	wifiPskString             = candyServiceUuidPrefix + "0006" + uuidSuffix
 	wifiConnectSignal         = candyServiceUuidPrefix + "0007" + uuidSuffix
@@ -51,6 +51,7 @@ type Controller struct {
 	ipChanges                  chan []byte
 	networkAvailabilityChanges chan []byte
 	onionApiChanges            chan []byte
+	discoveredWifiChanges      chan []byte
 }
 
 func NewController(config *Config) (*Controller, error) {
@@ -121,10 +122,10 @@ func NewController(config *Config) (*Controller, error) {
 		Create().
 		UserDescriptionDescriptor("Wi-Fi Scan Signal")
 
-	service.Characteristic(wifiScanList).
-		WithReadHandler(controller.readWifiScanList).
+	service.Characteristic(discoveredWifiSsid).
+		WithNotifications(controller.discoveredWifiChanges).
 		Create().
-		UserDescriptionDescriptor("Wi-Fi Scan List")
+		UserDescriptionDescriptor("Discovered Wi-Fi")
 
 	service.Characteristic(wifiSsidString).
 		WithReadHandler(controller.readWifiSsidString).
@@ -269,48 +270,6 @@ func (c *Controller) writeWifiScanSignal(value []byte) error {
 	}
 
 	return nil
-}
-
-func (c *Controller) readWifiScanList() ([]byte, error) {
-	c.log.Infof("Reading wifi scan list...")
-
-	networks, err := c.accessPoint.ListWifiNetworks()
-	if err != nil {
-		return nil, errors.Errorf("Could not get wifi scan list: %v", err)
-	}
-
-	// Map wifi's, so only one entry per SSID is left
-	wifiScanMap := make(map[string]*WifiScanListItem)
-	for _, net := range networks {
-		wifiScanMap[net.Ssid] = &WifiScanListItem{
-			Ssid: net.Ssid,
-		}
-	}
-
-	var list string
-
-	// Use literal instead of declaration so it serializes into empty json array
-	wifiScanList := []*WifiScanListItem{}
-	for _, net := range wifiScanMap {
-		wifiScanList = append(wifiScanList, net)
-	}
-
-	for i, net := range wifiScanList {
-		if i == 0 {
-			list = net.Ssid
-		} else {
-			list = net.Ssid + "\t" + list
-		}
-	}
-
-	//payload, err := json.Marshal(wifiScanList)
-	//if err != nil {
-	//	return nil, errors.Errorf("Could not serialize wifi scan list: %v", err)
-	//}
-
-	c.log.Infof("Returning Wi-Fi networks: %s", list)
-
-	return []byte(list), nil
 }
 
 func (c *Controller) readWifiSsidString() ([]byte, error) {

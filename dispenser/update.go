@@ -2,6 +2,9 @@ package dispenser
 
 import "github.com/the-lightning-land/sweetd/updater"
 
+type Update struct {
+}
+
 func (d *Dispenser) StartUpdate(url string) (*updater.Update, error) {
 	return d.updater.StartUpdate(url)
 }

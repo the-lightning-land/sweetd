@@ -17,7 +17,7 @@ type patchDispenserOp struct {
 
 type patchDispenserRequest []patchDispenserOp
 
-func (a *Api) handleGetDispenser() http.HandlerFunc {
+func (a *Handler) handleGetDispenser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		res := &dispenserResponse{
 			Name: "that",
@@ -27,7 +27,7 @@ func (a *Api) handleGetDispenser() http.HandlerFunc {
 	}
 }
 
-func (a *Api) handlePatchDispenser() http.HandlerFunc {
+func (a *Handler) handlePatchDispenser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := patchDispenserRequest{}
 		err := json.NewDecoder(r.Body).Decode(&req)

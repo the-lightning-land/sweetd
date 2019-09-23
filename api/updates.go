@@ -28,7 +28,7 @@ type updateResponse struct {
 	ShouldCommit bool      `json:"commit"`
 }
 
-func (a *Api) handlePostUpdate() http.HandlerFunc {
+func (a *Handler) handlePostUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req := postUpdateRequest{}
 		err := json.NewDecoder(r.Body).Decode(&req)
@@ -55,7 +55,7 @@ func (a *Api) handlePostUpdate() http.HandlerFunc {
 	}
 }
 
-func (a *Api) handleGetUpdate() http.HandlerFunc {
+func (a *Handler) handleGetUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id := vars["id"]
@@ -83,7 +83,7 @@ func (a *Api) handleGetUpdate() http.HandlerFunc {
 	}
 }
 
-func (a *Api) handlePatchUpdate() http.HandlerFunc {
+func (a *Handler) handlePatchUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id := vars["id"]
@@ -132,7 +132,7 @@ func (a *Api) handlePatchUpdate() http.HandlerFunc {
 	}
 }
 
-func (a *Api) handleGetUpdateEvents() http.HandlerFunc {
+func (a *Handler) handleGetUpdateEvents() http.HandlerFunc {
 	upgrader := &websocket.Upgrader{}
 
 	return func(w http.ResponseWriter, r *http.Request) {

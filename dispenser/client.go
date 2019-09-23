@@ -2,7 +2,7 @@ package dispenser
 
 type DispenseClient struct {
 	Dispenser  chan *Dispenser
-	Dispenses  chan bool
+	Dispenses  chan DispenseState
 	Id         uint32
 	cancelChan chan struct{}
 	dispenser  *Dispenser

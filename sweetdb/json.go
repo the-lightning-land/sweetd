@@ -27,23 +27,21 @@ func (db *DB) setJSON(bucket []byte, bucketKey []byte, v interface{}) error {
 	})
 }
 
-func (db *DB) getJSON(bucket []byte, bucketKey []byte, v interface{}) error {
-	var lightningNode = &LightningNode{}
-
+func (db *DB) getJSON(bucketName []byte, bucketKey []byte, v interface{}) error {
 	err := db.View(func(tx *bbolt.Tx) error {
 		// First fetch the bucket
-		bucket := tx.Bucket(settingsBucket)
+		bucket := tx.Bucket(bucketName)
 		if bucket == nil {
 			return nil
 		}
 
-		lightningNodeBytes := bucket.Get(lightningNodeKey)
-		if lightningNodeBytes == nil || bytes.Equal(lightningNodeBytes, []byte("null")) {
-			lightningNode = nil
+		payload := bucket.Get(bucketKey)
+		if payload == nil || bytes.Equal(payload, []byte("null")) {
+			v = nil
 			return nil
 		}
 
-		err := json.Unmarshal(lightningNodeBytes, &v)
+		err := json.Unmarshal(payload, v)
 		if err != nil {
 			return errors.Errorf("Could not unmarshal data: %v", err)
 		}

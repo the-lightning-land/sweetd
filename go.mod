@@ -13,7 +13,8 @@ require (
 	github.com/gobuffalo/logger v1.0.1 // indirect
 	github.com/gobuffalo/packr v0.0.0-20190708182234-662c20c19dde // indirect
 	github.com/gobuffalo/packr/v2 v2.5.3-0.20190708182234-662c20c19dde
-	github.com/godbus/dbus v5.0.0+incompatible
+	github.com/godbus/dbus v4.1.0+incompatible
+	github.com/godbus/dbus/v5 v5.0.2
 	github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6 // indirect
 	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v1.1.1

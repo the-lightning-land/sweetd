@@ -6,6 +6,6 @@ type Machine interface {
 	ToggleMotor(on bool)
 	ToggleBuzzer(on bool)
 	DiagnosticNoise()
-	SubscribeTouches() (*TouchesClient, error)
-	unsubscribeTouches(client *TouchesClient) error
+	SubscribeTouches() *TouchesClient
+	unsubscribeTouches(client *TouchesClient)
 }

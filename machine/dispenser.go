@@ -221,7 +221,7 @@ func (m *DispenserMachine) DiagnosticNoise() {
 	m.ToggleBuzzer(false)
 }
 
-func (m *DispenserMachine) SubscribeTouches() (*TouchesClient, error) {
+func (m *DispenserMachine) SubscribeTouches() *TouchesClient {
 	client := &TouchesClient{
 		Touches:    make(chan bool),
 		cancelChan: make(chan struct{}),
@@ -235,7 +235,7 @@ func (m *DispenserMachine) SubscribeTouches() (*TouchesClient, error) {
 
 	m.touchesClients[client.Id] = client
 
-	return client, nil
+	return client
 }
 
 func (m *DispenserMachine) notifyTouchesClients(touch bool) {
@@ -244,8 +244,7 @@ func (m *DispenserMachine) notifyTouchesClients(touch bool) {
 	}
 }
 
-func (m *DispenserMachine) unsubscribeTouches(client *TouchesClient) error {
+func (m *DispenserMachine) unsubscribeTouches(client *TouchesClient) {
 	delete(m.touchesClients, client.Id)
 	close(client.cancelChan)
-	return nil
 }

@@ -1,27 +1,27 @@
 package api
 
 import (
-	"github.com/go-errors/errors"
 	"github.com/gorilla/mux"
-	"github.com/the-lightning-land/sweetd/dispenser"
-	"net"
+	"github.com/the-lightning-land/sweetd/nodeman"
+	"github.com/the-lightning-land/sweetd/sweetdb"
+	"github.com/the-lightning-land/sweetd/updater"
 	"net/http"
 )
 
 type Config struct {
-	Dispenser *dispenser.Dispenser
+	Dispenser Dispenser
 	Log       Logger
 }
 
-type Api struct {
-	dispenser *dispenser.Dispenser
-	router    *mux.Router
+type Handler struct {
+	http.Handler
+	dispenser Dispenser
 	log       Logger
 }
 
-func New(config *Config) *Api {
-	api := &Api{
-		router: mux.NewRouter(),
+func NewHandler(config *Config) http.Handler {
+	api := &Handler{
+		dispenser: config.Dispenser,
 	}
 
 	if config.Log != nil {
@@ -30,36 +30,73 @@ func New(config *Config) *Api {
 		api.log = noopLogger{}
 	}
 
-	api.router.Handle("/api/v1/dispenser", api.handleGetDispenser()).Methods(http.MethodGet)
-	api.router.Handle("/api/v1/dispenser", api.handlePatchDispenser()).Methods(http.MethodPatch)
-	api.router.Handle("/api/v1/dispenser/events", api.handleGetDispenser()).Methods(http.MethodGet)
+	router := mux.NewRouter()
+	router.Use(api.loggingMiddleware)
 
-	api.router.Handle("/api/v1/updates", api.handlePostUpdate()).Methods(http.MethodPost)
-	api.router.Handle("/api/v1/updates/{id}", api.handleGetUpdate()).Methods(http.MethodGet)
-	api.router.Handle("/api/v1/updates/{id}", api.handlePatchUpdate()).Methods(http.MethodPatch)
-	api.router.Handle("/api/v1/updates/{id}/events", api.handleGetUpdateEvents()).Methods(http.MethodGet)
+	router.Handle("/dispenser", api.handleGetDispenser()).Methods(http.MethodGet)
+	router.Handle("/dispenser", api.handlePatchDispenser()).Methods(http.MethodPatch)
+	router.Handle("/dispenser/events", api.handleGetDispenser()).Methods(http.MethodGet)
 
-	api.router.Handle("/api/v1/nodes", api.handlePostUpdate()).Methods(http.MethodPost)
-	api.router.Handle("/api/v1/nodes", api.handlePostUpdate()).Methods(http.MethodGet)
-	api.router.Handle("/api/v1/nodes/{id}", api.handlePostUpdate()).Methods(http.MethodGet)
-	api.router.Handle("/api/v1/nodes/{id}", api.handlePostUpdate()).Methods(http.MethodPatch)
+	router.Handle("/updates", api.handlePostUpdate()).Methods(http.MethodPost)
+	router.Handle("/updates/{id}", api.handleGetUpdate()).Methods(http.MethodGet)
+	router.Handle("/updates/{id}", api.handlePatchUpdate()).Methods(http.MethodPatch)
+	router.Handle("/updates/{id}/events", api.handleGetUpdateEvents()).Methods(http.MethodGet)
 
-	api.router.Handle("/api/v1/networks", api.handlePostUpdate()).Methods(http.MethodPost)
-	api.router.Handle("/api/v1/networks/{id}", api.handlePostUpdate()).Methods(http.MethodPatch)
-	api.router.Handle("/api/v1/networks/events", api.handlePostUpdate()).Methods(http.MethodGet)
+	router.Handle("/nodes", api.postNodes()).Methods(http.MethodPost)
+	router.Handle("/nodes", api.getNodes()).Methods(http.MethodGet)
+	router.Handle("/nodes/{id}", api.getNodes()).Methods(http.MethodGet)
+	router.Handle("/nodes/{id}", api.patchNode()).Methods(http.MethodPatch)
+	router.Handle("/nodes/{id}", api.deleteNode()).Methods(http.MethodDelete)
+
+	router.Handle("/networks", api.handlePostUpdate()).Methods(http.MethodPost)
+	router.Handle("/networks/{id}", api.handlePostUpdate()).Methods(http.MethodPatch)
+	router.Handle("/networks/events", api.handlePostUpdate()).Methods(http.MethodGet)
+
+	api.Handler = router
 
 	return api
 }
 
-func (a *Api) SetDispenser(dispenser *dispenser.Dispenser) {
-	a.dispenser = dispenser
+func (a *Handler) loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.log.Infof("%s %s", r.Method, r.RequestURI)
+		next.ServeHTTP(w, r)
+	})
 }
 
-func (a *Api) Serve(l net.Listener) error {
-	err := http.Serve(l, a.router)
-	if err != nil {
-		return errors.Errorf("Unable to serve api: %v", err)
-	}
+type LightningNode interface {
+	ID() string
+	Name() string
+	Enabled() bool
+}
 
-	return nil
+type Dispenser interface {
+	GetNodes() []nodeman.LightningNode
+	GetNode(id string) nodeman.LightningNode
+	AddNode(config nodeman.NodeConfig) (nodeman.LightningNode, error)
+	RemoveNode(id string) error
+	EnableNode(id string) error
+	DisableNode(id string) error
+	RenameNode(id string, name string) error
+	GetApiOnionID() string
+	ToggleDispense(on bool)
+	SetWifiConnection(connection *sweetdb.WifiConnection) error
+	// GetState() dispenser.State
+	GetName() string
+	ShouldDispenseOnTouch() bool
+	ShouldBuzzOnDispense() bool
+	SetName(name string) error
+	SetDispenseOnTouch(dispenseOnTouch bool) error
+	SetBuzzOnDispense(buzzOnDispense bool) error
+	ConnectToWifi(ssid string, psk string) error
+	Reboot() error
+	ShutDown() error
+	Stop()
+	// SubscribeDispenses() *dispenser.DispenseClient
+	StartUpdate(url string) (*updater.Update, error)
+	GetUpdate(id string) (*updater.Update, error)
+	CancelUpdate(id string) (*updater.Update, error)
+	SubscribeUpdate(id string) (*updater.UpdateClient, error)
+	CommitUpdate(id string) (*updater.Update, error)
+	RejectUpdate(id string) (*updater.Update, error)
 }

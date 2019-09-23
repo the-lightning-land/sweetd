@@ -1,178 +1,256 @@
 package dispenser
 
 import (
-	"context"
-	"crypto/rsa"
 	"github.com/cretz/bine/tor"
 	"github.com/go-errors/errors"
-	"github.com/the-lightning-land/sweetd/ap"
+	"github.com/gorilla/mux"
+	"github.com/sirupsen/logrus"
+	"github.com/the-lightning-land/sweetd/api"
+	"github.com/the-lightning-land/sweetd/app"
+	"github.com/the-lightning-land/sweetd/lightning"
 	"github.com/the-lightning-land/sweetd/machine"
-	"github.com/the-lightning-land/sweetd/node"
+	"github.com/the-lightning-land/sweetd/network"
+	"github.com/the-lightning-land/sweetd/nodeman"
+	"github.com/the-lightning-land/sweetd/onion"
 	"github.com/the-lightning-land/sweetd/pos"
 	"github.com/the-lightning-land/sweetd/reboot"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/sweetlog"
 	"github.com/the-lightning-land/sweetd/updater"
-	"net"
+	"net/http"
 	"sync"
 	"time"
 )
 
 type State string
 
-const StateStarting = "starting"
-const StateRunning State = "running"
-const StateStopping State = "stopping"
+const (
+	StateStarting State = "starting"
+	StateStarted        = "running"
+	StateStopping       = "stopping"
+	StateStopped        = "stopped"
+)
+
+type DispenseState int
+
+const (
+	DispenseStateOn DispenseState = iota
+	DispenseStateOff
+)
 
 type nextClient struct {
 	sync.Mutex
 	id uint32
 }
 
+type Config struct {
+	Machine  machine.Machine
+	DB       *sweetdb.DB
+	Updater  updater.Updater
+	SweetLog *sweetlog.SweetLog
+	Logger   *logrus.Entry
+	Tor      *tor.Tor
+	Network  network.Network
+	Nodeman  *nodeman.Nodeman
+}
+
 type Dispenser struct {
-	machine          machine.Machine
-	AccessPoint      ap.Ap
-	db               *sweetdb.DB
-	DispenseOnTouch  bool
-	BuzzOnDispense   bool
-	done             chan struct{}
-	payments         chan *node.Invoice
-	LightningNodeUri string
-	dispenses        chan bool
-	dispenseClients  map[uint32]*DispenseClient
-	nextClient       nextClient
-	memoPrefix       string
-	updater          updater.Updater
-	// Deprecated: use nodes instead
-	node node.Node
-	// List of registered nodes
-	nodes          []node.Node
-	invoicesClient *node.InvoicesClient
-	pos            *pos.Pos
-	posOnion       *tor.OnionService
-	sweetLog       *sweetlog.SweetLog
-	log            Logger
-	tor            *tor.Tor
-	apiListeners   []net.Listener
-	apiOnion       *tor.OnionService
-	api            Api
-	state          State
+	// machine handles the touch sensor and physical dispensing and buzzing
+	machine machine.Machine
+
+	// network manages network connections
+	network network.Network
+
+	// db holds all persistent data
+	db *sweetdb.DB
+
+	// name is the personalized name of the dispenser
+	name string
+
+	// dispenseOnTouch indicates if device should dispense on touch
+	dispenseOnTouch bool
+
+	// buzzOnDispense indicates if the dispenser should buzz during dispensing
+	buzzOnDispense bool
+
+	// apiOnionService
+	apiOnionService *onion.Service
+
+	// posOnionService
+	posOnionService *onion.Service
+
+	// done can be closed when the dispenser should be shutdown
+	done chan struct{}
+
+	// dispenses signals whenever
+	dispenses chan DispenseState
+
+	// payments
+	payments chan *lightning.Invoice
+
+	// subscribers to dispense events
+	dispenseClients map[uint32]*DispenseClient
+
+	// next dispense event client information
+	nextClient nextClient
+
+	// updater handles system updates
+	updater updater.Updater
+
+	// nodeman node manager
+	nodeman *nodeman.Nodeman
+
+	// TODO(davidknezic): replace this with logInterceptor or similar
+	sweetLog *sweetlog.SweetLog
+
+	log *logrus.Entry
+
+	// tor provides access to the Tor network through which the
+	// api and the point of sale is exposed
+	tor *tor.Tor
+
+	// posHandler
+	posHandler http.Handler
+
+	// apiHandler
+	apiHandler http.Handler
+
+	// state keeps track of the lifecycle of the dispenser
+	state State
 }
 
 func NewDispenser(config *Config) *Dispenser {
 	dispenser := &Dispenser{
+		nodeman:         config.Nodeman,
 		machine:         config.Machine,
-		AccessPoint:     config.AccessPoint,
+		network:         config.Network,
 		db:              config.DB,
-		DispenseOnTouch: true,
-		BuzzOnDispense:  false,
-		done:            make(chan struct{}),
-		payments:        make(chan *node.Invoice),
-		dispenses:       make(chan bool),
+		payments:        make(chan *lightning.Invoice),
 		dispenseClients: make(map[uint32]*DispenseClient),
-		memoPrefix:      config.MemoPrefix,
 		updater:         config.Updater,
-		pos:             config.Pos,
 		sweetLog:        config.SweetLog,
 		log:             config.Logger,
 		tor:             config.Tor,
-		api:             config.Api,
-		state:           StateStarting,
+		state:           StateStopped,
+		posOnionService: onion.NewService(&onion.ServiceConfig{
+			Tor:    config.Tor,
+			Logger: config.Logger.WithField("system", "onion").WithField("for", "pos"),
+		}),
+		apiOnionService: onion.NewService(&onion.ServiceConfig{
+			Tor:    config.Tor,
+			Logger: config.Logger.WithField("system", "onion").WithField("for", "api"),
+		}),
 	}
 
-	config.Api.SetDispenser(dispenser)
+	dispenser.posHandler = pos.NewHandler(&pos.Config{
+		Logger:    config.Logger.WithField("system", "pos"),
+		Dispenser: dispenser,
+	})
+
+	apiHandler := api.NewHandler(&api.Config{
+		Log:       config.Logger.WithField("system", "api"),
+		Dispenser: dispenser,
+	})
+
+	appHandler := app.NewHandler(&app.Config{
+		Logger: config.Logger.WithField("system", "app"),
+	})
+
+	router := mux.NewRouter()
+	router.PathPrefix("/api/v1").Handler(apiHandler)
+	router.PathPrefix("/").Handler(appHandler)
+
+	dispenser.apiHandler = router
 
 	return dispenser
 }
 
-func (d *Dispenser) Run() error {
-	d.log.Infof("Starting machine...")
-
-	wifiConnection, err := d.db.GetWifiConnection()
+// restoreConfigs re-applies saved dispenser configs from the database
+func (d *Dispenser) restoreConfigs() {
+	name, err := d.db.GetName()
 	if err != nil {
-		d.log.Warnf("Could not retrieve saved wifi connection: %v", err)
+		d.log.Errorf("could not get name: %v", err)
 	}
 
-	if wifiConnection != nil {
-		d.log.Infof("Will attempt connecting to Wifi %v.", wifiConnection.Ssid)
+	d.name = name
 
-		err := d.AccessPoint.ConnectWifi(wifiConnection.Ssid, wifiConnection.Psk)
+	dispenseOnTouch, err := d.db.GetDispenseOnTouch()
+	if err != nil {
+		d.log.Errorf("could not get dispense on touch: %v", err)
+	}
+
+	d.dispenseOnTouch = dispenseOnTouch
+
+	buzzOnDispense, err := d.db.GetBuzzOnDispense()
+	if err != nil {
+		d.log.Errorf("could not get buzz on dispense: %v", err)
+	}
+
+	d.buzzOnDispense = buzzOnDispense
+
+	posPrivateKey, err := d.db.GetPosPrivateKey()
+	if err != nil {
+		d.log.Warnf("Could not read PoS private key: %v", err)
+	}
+
+	if posPrivateKey == nil {
+		posPrivateKey, err = onion.GeneratePrivateKey(onion.V2)
 		if err != nil {
-			d.log.Warnf("Whoops, couldn't connect to wifi: %v", err)
+			d.log.Errorf("Could not generate PoS private key: %v", err)
+		}
+
+		d.posOnionService.SetPrivateKey(posPrivateKey)
+		d.log.Infof("created new pos address: %s.onion", d.posOnionService.ID())
+
+		err := d.db.SetPosPrivateKey(posPrivateKey)
+		if err != nil {
+			d.log.Errorf("Could not save generated PoS private key: %v", err)
 		}
 	} else {
-		d.log.Infof("No saved Wifi connection available. Not connecting.")
+		d.posOnionService.SetPrivateKey(posPrivateKey)
+		d.log.Infof("using saved pos address: %s.onion", d.posOnionService.ID())
 	}
 
-	// Signal successful startup with two short buzzer noises
-	d.machine.DiagnosticNoise()
-
-	node, err := d.db.GetLightningNode()
+	apiPrivateKey, err := d.db.GetApiPrivateKey()
 	if err != nil {
-		return err
+		d.log.Warnf("could not read api private key: %v", err)
 	}
 
-	// connect to remote lightning node
-	if node != nil {
-		err := d.ConnectLndNode(node.Uri, node.Cert, node.Macaroon)
+	if apiPrivateKey == nil {
+		apiPrivateKey, err = onion.GeneratePrivateKey(onion.V2)
 		if err != nil {
-			d.log.Errorf("Could not connect to remote lightning node: %v", err)
+			d.log.Errorf("could not generate api private key: %v", err)
 		}
-	}
 
-	err = d.StartPos()
-	if err != nil {
-		d.log.Errorf("Could not start PoS: %v", err)
-	}
+		d.apiOnionService.SetPrivateKey(apiPrivateKey)
+		d.log.Infof("created new api address: %s.onion", d.apiOnionService.ID())
 
-	lis, err := net.Listen("tcp", ":9000")
-	if err != nil {
-		return errors.New("RPC server unable to listen on 0.0.0.0:9000")
-	}
-
-	d.apiListeners = append(d.apiListeners, lis)
-
-	go func() {
-		err = d.api.Serve(lis)
+		err := d.db.SetApiPrivateKey(apiPrivateKey)
 		if err != nil {
-			d.log.Errorf("Could not serve api: %v", err)
+			d.log.Errorf("could not save generated api private key: %v", err)
 		}
-	}()
-
-	// Notify all subscribed dispense clients
-	go func() {
-		for {
-			on := <-d.dispenses
-
-			for _, client := range d.dispenseClients {
-				client.Dispenses <- on
-			}
-		}
-	}()
-
-	touches, err := d.machine.SubscribeTouches()
-	if err != nil {
-		return errors.Errorf("Could not subscribe to touch events: %v", err)
+	} else {
+		d.apiOnionService.SetPrivateKey(apiPrivateKey)
+		d.log.Infof("using saved api address: %s.onion", d.apiOnionService.ID())
 	}
+}
 
-	defer func() {
-		err := touches.Cancel()
-		if err != nil {
-			d.log.Errorf("Could not close touch event subscription: %v", err)
-		}
-	}()
+// handleDispenses is run as a goroutine and handles dispenses
+func (d *Dispenser) handleDispenses(wg sync.WaitGroup) {
+	wg.Add(1)
 
-	d.state = StateRunning
+	d.log.Infof("started handling dispenses")
 
-	d.log.Infof("Successfully started dispenser")
+	touchesClient := d.machine.SubscribeTouches()
+	done := false
 
-	for {
+	for !done {
 		select {
-		case on := <-touches.Touches:
+		case on := <-touchesClient.Touches:
 			// react on direct touch events of the machine
 			d.log.Infof("Touch event %v", on)
 
-			if d.DispenseOnTouch && on {
+			if d.dispenseOnTouch && on {
 				d.ToggleDispense(true)
 			} else {
 				d.ToggleDispense(false)
@@ -190,111 +268,145 @@ func (d *Dispenser) Run() error {
 
 		case <-d.done:
 			// finish loop when program is done
-			return nil
+			done = true
 		}
 	}
+
+	touchesClient.Cancel()
+
+	d.log.Infof("stopped handling dispenses")
+
+	wg.Done()
+}
+
+// notifyDispenseSubscribers is run as a goroutine and notifies all dispense
+// subscribers when the dispense state changes
+func (d *Dispenser) notifyDispenseSubscribers(wg sync.WaitGroup) {
+	wg.Add(1)
+
+	done := false
+
+	for !done {
+		select {
+		case on := <-d.dispenses:
+			for _, client := range d.dispenseClients {
+				client.Dispenses <- on
+			}
+		case <-d.done:
+			// finish loop when program is done
+			done = true
+		}
+	}
+
+	// cancel all client subscriptions
+	for _, client := range d.dispenseClients {
+		client.Cancel()
+	}
+
+	wg.Done()
+}
+
+// maybeAttemptSavedWifiConnection is run as a goroutine and attempts a connection
+// to the most recently persisted wifi connection, if no network connection is available yet
+func (d *Dispenser) maybeAttemptSavedWifiConnection(wg sync.WaitGroup) {
+	wg.Add(1)
+
+	wifiConnection, err := d.db.GetWifiConnection()
+	if err != nil {
+		d.log.Warnf("could not get wifi connection: %v", err)
+	}
+
+	if wifiConnection != nil {
+		err := d.network.Connect(&network.WpaPskConnection{
+			Ssid: wifiConnection.Ssid,
+			Psk:  wifiConnection.Psk,
+		})
+		if err != nil {
+			d.log.Errorf("could not connect to saved wifi: %v", err)
+		}
+	} else {
+		d.log.Debugf("no saved wifi connection was found")
+	}
+
+	wg.Done()
+}
+
+// RunAndWait initializes all states and runs the dispenser in a blocking way until it is stopped
+func (d *Dispenser) RunAndWait() error {
+	var err error
+
+	d.state = StateStarting
+
+	// track tasks so function can be returned from only when all tasks are stopped
+	var wg sync.WaitGroup
+
+	// initialize a new channel that tracks dispense states
+	d.dispenses = make(chan DispenseState)
+
+	// initialize a new done channel to be closed to stop the dispenser
+	d.done = make(chan struct{})
+
+	// restore configs from the database
+	d.restoreConfigs()
+
+	// start background routines
+	go d.maybeAttemptSavedWifiConnection(wg)
+	go d.notifyDispenseSubscribers(wg)
+	go d.runLightningNodes(wg)
+	go d.handleDispenses(wg)
+
+	err = d.runPos(wg)
+	if err != nil {
+		err = errors.Errorf("unable to run point of sales: %v", err)
+		d.Stop()
+		goto Teardown
+	}
+
+	err = d.runApi(wg)
+	if err != nil {
+		err = errors.Errorf("unable to run api: %v", err)
+		d.Stop()
+		goto Teardown
+	}
+
+	d.state = StateStarted
+
+	// signal successful startup with two short buzzer noises
+	d.machine.DiagnosticNoise()
+
+	d.log.Infof("dispenser started")
+
+	// block until the done channel is closed
+	<-d.done
+
+Teardown:
+	d.state = StateStopping
+
+	// tear off dispenses channel
+	close(d.dispenses)
+	d.dispenses = nil
+
+	// wait for all registered tasks to finish
+	wg.Wait()
+
+	d.state = StateStopped
+
+	return err
 }
 
 func (d *Dispenser) ToggleDispense(on bool) {
 	// Always make sure that buzzing stops
-	if d.BuzzOnDispense || !on {
+	if d.buzzOnDispense || !on {
 		d.machine.ToggleBuzzer(on)
 	}
 
 	d.machine.ToggleMotor(on)
 
-	d.dispenses <- on
-}
-
-func (d *Dispenser) SaveLndNode(uri string, certBytes []byte, macaroonBytes []byte) error {
-	err := d.db.SetLightningNode(&sweetdb.LightningNode{
-		Uri:      uri,
-		Cert:     certBytes,
-		Macaroon: macaroonBytes,
-	})
-
-	if err != nil {
-		return errors.Errorf("Couldn not save lnd node connection: %v", err)
+	if on {
+		d.dispenses <- DispenseStateOn
+	} else {
+		d.dispenses <- DispenseStateOff
 	}
-
-	return nil
-}
-
-func (d *Dispenser) DeleteLndNode() error {
-	err := d.db.SetLightningNode(nil)
-
-	if err != nil {
-		return errors.Errorf("Couldn not delete lnd node connection: %v", err)
-	}
-
-	return nil
-}
-
-func (d *Dispenser) ConnectLndNode(uri string, certBytes []byte, macaroonBytes []byte) error {
-	return nil
-	if d.node != nil {
-		err := d.DisconnectLndNode()
-		if err != nil {
-			d.log.Warnf("Could not properly disconnect previous node: %v", err)
-		}
-	}
-
-	d.log.Infof("Connecting to remote lightning node %v", uri)
-
-	var err error
-	d.node, err = node.NewLndNode(&node.LndNodeConfig{
-		Uri:           uri,
-		Logger:        d.log,
-		CertBytes:     certBytes,
-		MacaroonBytes: macaroonBytes,
-	})
-	if err != nil {
-		return errors.Errorf("Could not create node: %v", err)
-	}
-
-	err = d.node.Start()
-	if err != nil {
-		return errors.Errorf("Could not start node: %v", err)
-	}
-
-	// save currently connected node uri
-	d.LightningNodeUri = uri
-
-	d.invoicesClient, err = d.node.SubscribeInvoices()
-	if err != nil {
-		return errors.Errorf("Could not subscribe to invoices: %v", err)
-	}
-
-	go func() {
-		for {
-			invoice := <-d.invoicesClient.Invoices
-			d.payments <- invoice
-		}
-	}()
-
-	return nil
-}
-
-func (d *Dispenser) DisconnectLndNode() error {
-	d.log.Infof("Disconnecting from remote lightning node")
-
-	if d.node != nil {
-		err := d.invoicesClient.Cancel()
-		if err != nil {
-			d.log.Warnf("Could not unsubscribe from invoices: %v", err)
-		}
-
-		err = d.node.Stop()
-		if err != nil {
-			return errors.Errorf("Could not stop node: %v", err)
-		}
-	}
-
-	d.LightningNodeUri = ""
-	d.node = nil
-	d.invoicesClient = nil
-
-	return nil
 }
 
 func (d *Dispenser) SetWifiConnection(connection *sweetdb.WifiConnection) error {
@@ -312,19 +424,29 @@ func (d *Dispenser) GetState() State {
 	return d.state
 }
 
-func (d *Dispenser) GetName() (string, error) {
-	d.log.Infof("Getting name")
+func (d *Dispenser) GetName() string {
+	if d.name == "" {
+		// TODO: Name the dispenser individually by default
+		// name = fmt.Sprintf("Candy %v", id)
 
-	name, err := d.db.GetName()
-	if err != nil {
-		return "", errors.Errorf("Failed getting name: %v", err)
+		return "Candy Dispenser"
 	}
 
-	return name, nil
+	return d.name
+}
+
+func (d *Dispenser) ShouldDispenseOnTouch() bool {
+	return d.dispenseOnTouch
+}
+
+func (d *Dispenser) ShouldBuzzOnDispense() bool {
+	return d.buzzOnDispense
 }
 
 func (d *Dispenser) SetName(name string) error {
 	d.log.Infof("Setting name")
+
+	d.name = name
 
 	err := d.db.SetName(name)
 	if err != nil {
@@ -337,7 +459,7 @@ func (d *Dispenser) SetName(name string) error {
 func (d *Dispenser) SetDispenseOnTouch(dispenseOnTouch bool) error {
 	d.log.Infof("Setting dispense on touch")
 
-	d.DispenseOnTouch = dispenseOnTouch
+	d.dispenseOnTouch = dispenseOnTouch
 
 	err := d.db.SetDispenseOnTouch(dispenseOnTouch)
 	if err != nil {
@@ -350,7 +472,7 @@ func (d *Dispenser) SetDispenseOnTouch(dispenseOnTouch bool) error {
 func (d *Dispenser) SetBuzzOnDispense(buzzOnDispense bool) error {
 	d.log.Infof("Setting buzz on dispense")
 
-	d.BuzzOnDispense = buzzOnDispense
+	d.buzzOnDispense = buzzOnDispense
 
 	err := d.db.SetBuzzOnDispense(buzzOnDispense)
 	if err != nil {
@@ -363,7 +485,10 @@ func (d *Dispenser) SetBuzzOnDispense(buzzOnDispense bool) error {
 func (d *Dispenser) ConnectToWifi(ssid string, psk string) error {
 	d.log.Infof("Connecting to wifi %v", ssid)
 
-	err := d.AccessPoint.ConnectWifi(ssid, psk)
+	err := d.network.Connect(&network.WpaPskConnection{
+		Ssid: ssid,
+		Psk:  psk,
+	})
 	if err != nil {
 		d.log.Errorf("Could not get Wifi networks: %v", err)
 		return errors.New("Could not get Wifi networks")
@@ -376,76 +501,6 @@ func (d *Dispenser) ConnectToWifi(ssid string, psk string) error {
 	if err != nil {
 		d.log.Errorf("Could not save wifi connection: %v", err)
 	}
-
-	return nil
-}
-
-func (d *Dispenser) StartPos() error {
-	var key *rsa.PrivateKey
-
-	d.log.Infof("Starting PoS")
-
-	key, err := d.db.GetPosPrivateKey()
-	if err != nil {
-		d.log.Warnf("Could not read PoS private key: %v", err)
-	}
-
-	if key == nil {
-		key, err = d.pos.GenerateKey()
-		if err != nil {
-			return errors.Errorf("Could not generate PoS private key: %v", err)
-		}
-
-		d.log.Infof("Generated new PoS private key")
-
-		err := d.db.SetPosPrivateKey(key)
-		if err != nil {
-			d.log.Errorf("Could not save generated PoS private key: %v", err)
-		}
-	}
-
-	err = d.pos.SetNode(d.node)
-	if err != nil {
-		return errors.Errorf("Could not set PoS node: %v", err)
-	}
-
-	listenCtx, listenCancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer listenCancel()
-
-	d.posOnion, err = d.tor.Listen(listenCtx, &tor.ListenConf{
-		Key:         key,
-		RemotePorts: []int{80},
-	})
-	if err != nil {
-		return errors.Errorf("Could not create onion service: %v", err)
-	}
-
-	d.log.Infof("Try http://%v.onion", d.posOnion.ID)
-
-	go func() {
-		d.log.Infof("Starting onion service...")
-
-		err = d.pos.Serve(d.posOnion)
-		if err != nil {
-			d.log.Errorf("Could not serve through onion service: %v", err)
-		}
-
-		d.log.Infof("Started onion service")
-	}()
-
-	return nil
-}
-
-func (d *Dispenser) GetApiOnionID() string {
-	if d.apiOnion == nil {
-		return ""
-	}
-
-	return d.apiOnion.ID
-}
-
-func (d *Dispenser) StopPos() error {
-	d.log.Infof("Stopping PoS")
 
 	return nil
 }
@@ -473,35 +528,13 @@ func (d *Dispenser) ShutDown() error {
 }
 
 func (d *Dispenser) Stop() {
-	d.state = StateStopping
-
-	for _, lis := range d.apiListeners {
-		err := lis.Close()
-		if err != nil {
-			d.log.Errorf("Could not close listener: %v", err)
-		}
-	}
-
-	if d.node != nil {
-		err := d.node.Stop()
-		if err != nil {
-			d.log.Warnf("Could not properly shut down node: %v", err)
-		}
-
-		d.node = nil
-	}
-
-	err := d.StopPos()
-	if err != nil {
-		d.log.Errorf("Could not stop PoS: %v", err)
-	}
-
+	// signal the dispenser run loop to stop
 	close(d.done)
 }
 
 func (d *Dispenser) SubscribeDispenses() *DispenseClient {
 	client := &DispenseClient{
-		Dispenses:  make(chan bool),
+		Dispenses:  make(chan DispenseState),
 		cancelChan: make(chan struct{}),
 		dispenser:  d,
 	}

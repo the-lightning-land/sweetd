@@ -18,15 +18,23 @@ pos/node_modules: pos/package.json pos/package-lock.json
 	@$(call print, "Getting node dependencies.")
 	(cd pos && npm install)
 
-npm-export: pos/node_modules pos/components/*.js
+app/node_modules: app/package.json app/package-lock.json
+	@$(call print, "Getting node dependencies.")
+	(cd pos && npm install)
+
+pos: pos/node_modules pos/components/*.js
 	@$(call print, "Compiling point-of-sale assets.")
 	(cd pos && npm run export)
-
-pack: npm-export
 	@$(call print, "Packaging static assets.")
 	(cd pos && packr2)
 
-build: pack
+app: app/node_modules app/**/*.js
+	@$(call print, "Compiling app assets.")
+	(cd app && npm run build)
+	@$(call print, "Packaging static assets.")
+	(cd app && packr2)
+
+build: pos app
 	@$(call print, "Building sweetd.")
 	go build $(LDFLAGS) $(GOBUILDFLAGS) -o sweetd $(PKG)
 

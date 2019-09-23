@@ -20,7 +20,7 @@ func (db *DB) SaveUpdate(update *Update) error {
 func (db *DB) GetUpdate(id string) (*Update, error) {
 	var update = &Update{}
 
-	if err := db.getJSON(updatesBucket, []byte(id), &update); err == nil {
+	if err := db.getJSON(updatesBucket, []byte(id), &update); err != nil {
 		return nil, err
 	}
 
