@@ -6,7 +6,10 @@ import (
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/updater"
 	"net/http"
+	"regexp"
 )
+
+var localhostOriginPattern = regexp.MustCompile(`^https?://localhost(:\d+)?$`)
 
 type Config struct {
 	Dispenser Dispenser
@@ -32,6 +35,7 @@ func NewHandler(config *Config) http.Handler {
 
 	router := mux.NewRouter()
 	router.Use(api.loggingMiddleware)
+	router.Use(api.localhostMiddleware)
 
 	router.Handle("/dispenser", api.handleGetDispenser()).Methods(http.MethodGet)
 	router.Handle("/dispenser", api.handlePatchDispenser()).Methods(http.MethodPatch)
@@ -60,6 +64,18 @@ func NewHandler(config *Config) http.Handler {
 func (a *Handler) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.log.Infof("%s %s", r.Method, r.RequestURI)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a *Handler) localhostMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+
+		if localhostOriginPattern.MatchString(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Max-Age", "1")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
