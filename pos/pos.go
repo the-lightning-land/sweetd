@@ -8,9 +8,12 @@ import (
 	"github.com/the-lightning-land/sweetd/lightning"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var localhostOriginPattern = regexp.MustCompile(`^https?://localhost(:\d+)?$`)
 
 type Dispenser interface {
 }
@@ -78,8 +81,10 @@ func (p *Handler) createLoggingMiddleware(log func(string, ...interface{})) func
 
 func (p *Handler) localhostMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.Referer(), "http://localhost:3001") {
-			w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3001")
+		origin := r.Header.Get("Origin")
+
+		if localhostOriginPattern.MatchString(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Max-Age", "1")
 		}
 		next.ServeHTTP(w, r)
