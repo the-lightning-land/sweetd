@@ -1,26 +1,26 @@
-import React from 'react';
-import Pairing from './pairing';
+import React, { useEffect } from 'react';
 import Dispenser from './dispenser';
 import { useDispenserState } from './hooks/state';
 
 function App() {
   const [dispenser, setDispenser] = useDispenserState(null);
 
-  function onPair(pairedDispenser) {
-    setDispenser(pairedDispenser);
-  }
+  useEffect(() => {
+    async function doFetch() {
+      const res = await fetch('http://localhost:9000/api/v1/dispenser');
+      const dispenser = await res.json();
+      setDispenser(dispenser);
+    }
 
-  function onUnpair(pairedDispenser) {
-    setDispenser(null);
-  }
+    doFetch();
+  }, []);
 
   return (
     <div className="container">
-      {dispenser ? (
-        <Dispenser onUnpair={onUnpair} />
-      ) : (
-        <Pairing onPaired={onPair} />
+      {dispenser && (
+        <h1>{dispenser.name}</h1>
       )}
+      <Dispenser />
       <style jsx global>{`
         body {
           background-color: #f2f2f2;

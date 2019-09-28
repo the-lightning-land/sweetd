@@ -9,7 +9,6 @@ import { ReactComponent as HomeIcon } from './home.svg';
 import { ReactComponent as NodeIcon } from './nodes.svg';
 import { ReactComponent as NetworkIcon } from './network.svg';
 import { ReactComponent as UpdateIcon } from './updates.svg';
-import { ReactComponent as EjectIcon } from './eject.svg';
 
 const { className, styles } = css.resolve`
   a {
@@ -23,7 +22,7 @@ const { className, styles } = css.resolve`
   }
 `
 
-function Dispenser({ onUnpair }) {
+function Dispenser() {
   return (
     <div className="dispenser">
       <div className="menu">
@@ -55,8 +54,6 @@ function Dispenser({ onUnpair }) {
         </ul>
       </div>
       <div className="main">
-        <button onClick={onUnpair}>Unpair</button>
-        <EjectIcon className={className} />
         <Switch>
           <Route path="/" exact component={Home} />
           <Route path="/nodes" component={Nodes} />
@@ -64,7 +61,6 @@ function Dispenser({ onUnpair }) {
           <Route path="/updates" component={Updates} />
         </Switch>
         <div className="">
-
         </div>
       </div>
       {styles}

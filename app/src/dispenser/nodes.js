@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useModal } from 'react-modal-hook';
 import Node from '../node';
 import Modal from '../modal';
@@ -7,6 +7,16 @@ import { useNodesState } from '../hooks/state';
 function Nodes() {
   const [nodes, setNodes] = useNodesState([]);
   const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    async function doFetch() {
+      const res = await fetch('http://localhost:9000/api/v1/nodes');
+      const nodes = await res.json();
+      setNodes(nodes);
+    }
+
+    doFetch();
+  }, []);
 
   const [showModal] = useModal(({ in: open, onExited }) => (
     <Modal open={open} onClose={onExited}>
@@ -25,14 +35,13 @@ function Nodes() {
   return (
     <div>
       {nodes.map(node => (
-        <Node />
+        <Node
+          name={node.name}
+          onRename={rename}
+          status="locked"
+          onUnlock={unlock}
+        />
       ))}
-      <Node
-        name="Coincenter"
-        onRename={rename}
-        status="locked"
-        onUnlock={unlock}
-      />
       <div className="">
         add new...
       </div>
