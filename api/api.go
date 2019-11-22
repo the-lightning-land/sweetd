@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gorilla/mux"
+	"github.com/the-lightning-land/sweetd/network"
 	"github.com/the-lightning-land/sweetd/nodeman"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/updater"
@@ -104,7 +105,7 @@ type Dispenser interface {
 	SetName(name string) error
 	SetDispenseOnTouch(dispenseOnTouch bool) error
 	SetBuzzOnDispense(buzzOnDispense bool) error
-	ConnectToWifi(ssid string, psk string) error
+	ConnectToWifi(connection network.Connection) error
 	Reboot() error
 	ShutDown() error
 	Stop()

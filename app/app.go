@@ -38,7 +38,7 @@ func NewHandler(config *Config) http.Handler {
 func (a *App) createLoggingMiddleware(log func(string, ...interface{})) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log("Accessing %v", r.RequestURI)
+			log("accessing %v", r.RequestURI)
 			next.ServeHTTP(w, r)
 		})
 	}

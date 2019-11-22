@@ -75,28 +75,87 @@ func (n *WpaNetwork) Status() *Status {
 	}
 }
 
-type WpaPskConnection struct {
-	Ssid string
-	Psk  string
-}
-
-type WpaConnection struct {
-	Ssid string
-}
-
 func (n *WpaNetwork) Connect(connection Connection) error {
 	switch connection.(type) {
 	case *WpaPskConnection:
-		// n.wpa.
 	case *WpaConnection:
-		// .s
 	}
 
 	return nil
 }
 
-func (n *WpaNetwork) Scan() error {
-	return nil
+func (n *WpaNetwork) Scan() (*ScanClient, error) {
+	err := n.iface.Scan()
+	if err != nil {
+		return nil, errors.Errorf("unable to scan: %v", err)
+	}
+
+	wifisChan := make(chan *Wifi)
+
+	client, err := n.iface.BSSAdded()
+	if err != nil {
+		return nil, errors.Errorf("unable to listen for added wifis: %v", err)
+	}
+
+	doneClient, err := n.iface.ScanDone()
+	if err != nil {
+		return nil, errors.Errorf("unable to listen to scan completion: %v", err)
+	}
+
+	bsss, err := n.iface.BSSs()
+	if err != nil {
+		return nil, errors.Errorf("unable to get BSSs: %v", err)
+	}
+
+	go func() {
+		for _, bss := range bsss {
+			b, err := bss.GetAll()
+			if err != nil {
+				continue
+			}
+
+			wifisChan <- &Wifi{
+				Ssid: b.Ssid,
+			}
+		}
+
+		for {
+			select {
+			case bss, ok := <-client.BSSAdded:
+				if !ok {
+					close(wifisChan)
+					return
+				}
+
+				b, err := bss.GetAll()
+				if err != nil {
+					continue
+				}
+
+				wifisChan <- &Wifi{
+					Ssid: b.Ssid,
+				}
+			case done, ok := <-doneClient.ScanDone:
+				if !ok {
+					close(wifisChan)
+					return
+				}
+
+				if done {
+					client.Cancel()
+					doneClient.Cancel()
+				}
+			}
+		}
+	}()
+
+	return &ScanClient{
+		Wifis: wifisChan,
+		Cancel: func() {
+			client.Cancel()
+			doneClient.Cancel()
+		},
+	}, nil
 }
 
 func (n *WpaNetwork) Subscribe() *Client {

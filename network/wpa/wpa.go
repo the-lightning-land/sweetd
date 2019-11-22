@@ -6,22 +6,19 @@ import (
 )
 
 type Wpa struct {
-	signalHandler dbus.SignalHandler
-	conn          *dbus.Conn
-	obj           dbus.BusObject
+	conn *dbus.Conn
+	obj  dbus.BusObject
 }
 
 func New() *Wpa {
 	wpa := &Wpa{
 	}
 
-	wpa.signalHandler = wpaSignalHandler{wpa}
-
 	return wpa
 }
 
 func (w *Wpa) Start() error {
-	conn, err := dbus.SystemBusPrivate(dbus.WithSignalHandler(w.signalHandler))
+	conn, err := dbus.SystemBusPrivate()
 	if err != nil {
 		return errors.Errorf("could not create system bus: %v", err)
 	}
@@ -82,8 +79,4 @@ func (w *Wpa) Stop() error {
 	w.conn = nil
 
 	return nil
-}
-
-func (w *Wpa) deliverSignal(iface, name string, signal *dbus.Signal) {
-	println(iface, name, signal.Body)
 }

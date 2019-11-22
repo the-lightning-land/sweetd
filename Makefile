@@ -20,19 +20,22 @@ pos/node_modules: pos/package.json pos/package-lock.json
 
 app/node_modules: app/package.json app/package-lock.json
 	@$(call print, "Getting node dependencies.")
-	(cd pos && npm install)
+	(cd app && npm install)
 
-pos: pos/node_modules pos/components/*.js
+pos/packrd/packed-packr.go: pos/node_modules pos/components/*.js
 	@$(call print, "Compiling point-of-sale assets.")
 	(cd pos && npm run export)
 	@$(call print, "Packaging static assets.")
 	(cd pos && packr2)
 
-app: app/node_modules app/**/*.js
+app/packrd/packed-packr.go: app/node_modules app/**/*.js
 	@$(call print, "Compiling app assets.")
 	(cd app && npm run build)
 	@$(call print, "Packaging static assets.")
 	(cd app && packr2)
+
+pos: pos/packrd/packed-packr.go
+app: app/packrd/packed-packr.go
 
 build: pos app
 	@$(call print, "Building sweetd.")

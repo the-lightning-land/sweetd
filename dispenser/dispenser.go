@@ -12,6 +12,7 @@ import (
 	"github.com/the-lightning-land/sweetd/network"
 	"github.com/the-lightning-land/sweetd/nodeman"
 	"github.com/the-lightning-land/sweetd/onion"
+	"github.com/the-lightning-land/sweetd/pairing"
 	"github.com/the-lightning-land/sweetd/pos"
 	"github.com/the-lightning-land/sweetd/reboot"
 	"github.com/the-lightning-land/sweetd/sweetdb"
@@ -52,6 +53,7 @@ type Config struct {
 	Tor      *tor.Tor
 	Network  network.Network
 	Nodeman  *nodeman.Nodeman
+	Pairing  pairing.Controller
 }
 
 type Dispenser struct {
@@ -100,6 +102,9 @@ type Dispenser struct {
 	// nodeman node manager
 	nodeman *nodeman.Nodeman
 
+	// pairing controller
+	pairing pairing.Controller
+
 	// TODO(davidknezic): replace this with logInterceptor or similar
 	sweetLog *sweetlog.SweetLog
 
@@ -122,6 +127,7 @@ type Dispenser struct {
 func NewDispenser(config *Config) *Dispenser {
 	dispenser := &Dispenser{
 		nodeman:         config.Nodeman,
+		pairing:         config.Pairing,
 		machine:         config.Machine,
 		network:         config.Network,
 		db:              config.DB,
@@ -306,31 +312,6 @@ func (d *Dispenser) notifyDispenseSubscribers(wg sync.WaitGroup) {
 	wg.Done()
 }
 
-// maybeAttemptSavedWifiConnection is run as a goroutine and attempts a connection
-// to the most recently persisted wifi connection, if no network connection is available yet
-func (d *Dispenser) maybeAttemptSavedWifiConnection(wg sync.WaitGroup) {
-	wg.Add(1)
-
-	wifiConnection, err := d.db.GetWifiConnection()
-	if err != nil {
-		d.log.Warnf("could not get wifi connection: %v", err)
-	}
-
-	if wifiConnection != nil {
-		err := d.network.Connect(&network.WpaPskConnection{
-			Ssid: wifiConnection.Ssid,
-			Psk:  wifiConnection.Psk,
-		})
-		if err != nil {
-			d.log.Errorf("could not connect to saved wifi: %v", err)
-		}
-	} else {
-		d.log.Debugf("no saved wifi connection was found")
-	}
-
-	wg.Done()
-}
-
 // RunAndWait initializes all states and runs the dispenser in a blocking way until it is stopped
 func (d *Dispenser) RunAndWait() error {
 	var err error
@@ -354,6 +335,24 @@ func (d *Dispenser) RunAndWait() error {
 	go d.notifyDispenseSubscribers(wg)
 	go d.runLightningNodes(wg)
 	go d.handleDispenses(wg)
+
+	go func() {
+		check, err := onion.Check(d.tor)
+		if err != nil {
+			d.log.Errorf("unable to check: %v", err)
+		}
+
+		if check {
+			d.log.Info("successfully connected to Tor")
+		} else {
+			d.log.Error("not connected to Tor")
+		}
+	}()
+
+	err = d.pairing.Advertise()
+	if err != nil {
+		d.log.Errorf("unable to advertise: %v", err)
+	}
 
 	err = d.runPos(wg)
 	if err != nil {
@@ -407,17 +406,6 @@ func (d *Dispenser) ToggleDispense(on bool) {
 	} else {
 		d.dispenses <- DispenseStateOff
 	}
-}
-
-func (d *Dispenser) SetWifiConnection(connection *sweetdb.WifiConnection) error {
-	d.log.Infof("Setting Wifi connection")
-
-	err := d.db.SetWifiConnection(connection)
-	if err != nil {
-		return errors.Errorf("Failed setting Wifi connection: %v", err)
-	}
-
-	return nil
 }
 
 func (d *Dispenser) GetState() State {
@@ -477,29 +465,6 @@ func (d *Dispenser) SetBuzzOnDispense(buzzOnDispense bool) error {
 	err := d.db.SetBuzzOnDispense(buzzOnDispense)
 	if err != nil {
 		return errors.Errorf("Failed setting buzz on dispense: %v", err)
-	}
-
-	return nil
-}
-
-func (d *Dispenser) ConnectToWifi(ssid string, psk string) error {
-	d.log.Infof("Connecting to wifi %v", ssid)
-
-	err := d.network.Connect(&network.WpaPskConnection{
-		Ssid: ssid,
-		Psk:  psk,
-	})
-	if err != nil {
-		d.log.Errorf("Could not get Wifi networks: %v", err)
-		return errors.New("Could not get Wifi networks")
-	}
-
-	err = d.SetWifiConnection(&sweetdb.WifiConnection{
-		Ssid: ssid,
-		Psk:  psk,
-	})
-	if err != nil {
-		d.log.Errorf("Could not save wifi connection: %v", err)
 	}
 
 	return nil

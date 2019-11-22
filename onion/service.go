@@ -3,8 +3,8 @@ package onion
 import (
 	"context"
 	"crypto"
-	"crypto/rsa"
 	"github.com/cretz/bine/tor"
+	"github.com/cretz/bine/torutil"
 	"net"
 	"sync"
 	"time"
@@ -49,11 +49,7 @@ func NewService(config *ServiceConfig) *Service {
 }
 
 func (s *Service) ID() string {
-	switch key := s.key.(type) {
-	case *rsa.PrivateKey:
-		return computeV2IDFromV2PublicKey(key.PublicKey)
-	}
-	return ""
+	return torutil.OnionServiceIDFromPrivateKey(s.key)
 }
 
 var mutex = sync.Mutex{}

@@ -28,8 +28,8 @@ func (m *MockNetwork) Connect(connection Connection) error {
 	return nil
 }
 
-func (m *MockNetwork) Scan() error {
-	return nil
+func (m *MockNetwork) Scan() (*ScanClient, error) {
+	return nil, nil
 }
 
 func (m *MockNetwork) Subscribe() *Client {

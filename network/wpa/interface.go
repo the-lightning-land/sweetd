@@ -12,7 +12,7 @@ type Interface struct {
 
 func (i *Interface) Scan() error {
 	call := i.obj.Call("fi.w1.wpa_supplicant1.Interface.Scan", 0, map[string]interface{}{
-		"Type": "passive",
+		"Type": "active",
 	})
 	if call.Err != nil {
 		return errors.Errorf("could not find scan: %v", call.Err)
@@ -21,22 +21,100 @@ func (i *Interface) Scan() error {
 	return nil
 }
 
-func (i *Interface) BSSAdded() error {
-	call := i.wpa.conn.BusObject().AddMatchSignal("fi.w1.wpa_supplicant1.Interface", "BSSAdded", dbus.WithMatchObjectPath(i.obj.Path()))
-	if call.Err != nil {
-		return errors.Errorf("could not add signal: %v", call.Err)
-	}
-
-	return nil
+type BSSAddedClient struct {
+	BSSAdded <-chan *BSS
+	Cancel   func()
 }
 
-func (i *Interface) ScanDone() error {
-	call := i.wpa.conn.BusObject().AddMatchSignal("fi.w1.wpa_supplicant1.Interface", "ScanDone", dbus.WithMatchObjectPath(i.obj.Path()))
-	if call.Err != nil {
-		return errors.Errorf("could not add signal: %v", call.Err)
+func (i *Interface) BSSAdded() (*BSSAddedClient, error) {
+	bssChan := make(chan *BSS)
+	signalChan := make(chan *dbus.Signal)
+
+	client := &BSSAddedClient{
+		BSSAdded: bssChan,
+		Cancel: func() {
+			i.wpa.conn.RemoveSignal(signalChan)
+
+			_ = i.wpa.conn.BusObject().RemoveMatchSignal("fi.w1.wpa_supplicant1.Interface", "BSSAdded", dbus.WithMatchObjectPath(i.obj.Path()))
+
+			close(signalChan)
+			close(bssChan)
+		},
 	}
 
-	return nil
+	go func() {
+		i.wpa.conn.Signal(signalChan)
+
+		for {
+			select {
+			case signal, ok := <-signalChan:
+				if ok {
+					return
+				}
+
+				if signal.Name == "fi.w1.wpa_supplicant1.Interface.BSSAdded" && signal.Path == i.obj.Path() {
+					bssChan <- &BSS{
+						obj: i.wpa.conn.Object("fi.w1.wpa_supplicant1", signal.Path),
+					}
+				}
+			}
+		}
+	}()
+
+	call := i.wpa.conn.BusObject().AddMatchSignal("fi.w1.wpa_supplicant1.Interface", "BSSAdded", dbus.WithMatchObjectPath(i.obj.Path()))
+	if call.Err != nil {
+		return nil, errors.Errorf("could not add signal: %v", call.Err)
+	}
+
+	return client, nil
+}
+
+type ScanDoneClient struct {
+	ScanDone <-chan bool
+	Cancel   func()
+}
+
+func (i *Interface) ScanDone() (*ScanDoneClient, error) {
+	changeChan := make(chan bool)
+	signalChan := make(chan *dbus.Signal)
+
+	client := &ScanDoneClient{
+		ScanDone: changeChan,
+		Cancel: func() {
+			i.wpa.conn.RemoveSignal(signalChan)
+
+			_ = i.wpa.conn.BusObject().RemoveMatchSignal("fi.w1.wpa_supplicant1.Interface", "ScanDone", dbus.WithMatchObjectPath(i.obj.Path()))
+
+			close(signalChan)
+			close(changeChan)
+		},
+	}
+
+	go func() {
+		i.wpa.conn.Signal(signalChan)
+
+		for {
+			select {
+			case signal, ok := <-signalChan:
+				if !ok {
+					return
+				}
+
+				if signal.Name == "fi.w1.wpa_supplicant1.Interface.ScanDone" && signal.Path == i.obj.Path() {
+					println(signal.Name, signal.Body[0].(bool))
+
+					changeChan <- signal.Body[0].(bool)
+				}
+			}
+		}
+	}()
+
+	call := i.wpa.conn.BusObject().AddMatchSignal("fi.w1.wpa_supplicant1.Interface", "ScanDone", dbus.WithMatchObjectPath(i.obj.Path()))
+	if call.Err != nil {
+		return nil, errors.Errorf("could not add signal: %v", call.Err)
+	}
+
+	return client, nil
 }
 
 func (i *Interface) PropertiesChanged() error {

@@ -40,7 +40,7 @@ func sweetdMain() error {
 	log.SetLevel(log.InfoLevel)
 	log.AddHook(sweetLog)
 
-	// Load CLI configuration and defaults
+	// load cli configuration and defaults
 	cfg, err := loadConfig()
 	if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
 		return nil
@@ -48,7 +48,7 @@ func sweetdMain() error {
 		return errors.Errorf("Failed parsing arguments: %v", err)
 	}
 
-	// Set logger into debug mode if called with --debug
+	// set logger into debug mode if called with --debug
 	if cfg.Debug {
 		log.SetLevel(log.DebugLevel)
 		log.Info("Setting debug mode.")
@@ -56,19 +56,19 @@ func sweetdMain() error {
 
 	log.Debug("Loaded config.")
 
-	// Print version of the daemon
+	// print version of the daemon
 	log.Infof("Version %s (commit %s)", Version, Commit)
 	log.Infof("Built on %s", Date)
 
-	// Stop here if only version was requested
 	if cfg.ShowVersion {
+		// return without error if only the version string  was requested
 		return nil
 	}
 
-	if cfg.Profiling != nil {
+	if cfg.Profiling != nil && cfg.Profiling.Listen != "" {
 		go func() {
 			log.Infof("Starting profiling server on %v", cfg.Profiling.Listen)
-			// Redirect the root path
+			// redirect the root path
 			http.Handle("/", http.RedirectHandler("/debug/pprof", http.StatusSeeOther))
 			// All other handlers are registered on DefaultServeMux through the import of pprof
 			err := http.ListenAndServe(cfg.Profiling.Listen, nil)
@@ -95,7 +95,7 @@ func sweetdMain() error {
 		}
 	}()
 
-	// The network, which acts as the core connectivity
+	// network, which acts as the core connectivity
 	// provider for all other components
 	var net network.Network
 
@@ -126,7 +126,7 @@ func sweetdMain() error {
 		}
 	}()
 
-	// The updater which takes care of system updates
+	// updater which takes care of system updates
 	var u updater.Updater
 
 	switch cfg.Updater {
@@ -145,7 +145,7 @@ func sweetdMain() error {
 		return errors.Errorf("Unknown updater type %v", cfg.Updater)
 	}
 
-	// The hardware controller
+	// hardware machine controller
 	var m machine.Machine
 
 	switch cfg.Machine {
@@ -214,6 +214,27 @@ func sweetdMain() error {
 		},
 	})
 
+	// pairingAdapter adapts the dispenser API to one compatible
+	// with the pairing controller
+	pairingAdapter := &dispenser.PairingAdapter{}
+
+	if cfg.Pairing.Interface != "" {
+		pairingAdapter.Pairing, err = pairing.NewController(&pairing.BLEControllerConfig{
+			Logger:    log.WithField("system", "pairing"),
+			AdapterId: cfg.Pairing.Interface,
+			Dispenser: pairingAdapter,
+		})
+		if err != nil {
+			return errors.Errorf("unable to create BLE pairing controller: %v", err)
+		}
+
+		log.Infof("created BLE pairing controller")
+	} else {
+		pairingAdapter.Pairing = pairing.NewNoopController()
+
+		log.Info("created no-op pairing controller as no interface was specified")
+	}
+
 	// central controller for everything the dispenser does
 	dispenser := dispenser.NewDispenser(&dispenser.Config{
 		Nodeman:  nodeman,
@@ -224,39 +245,28 @@ func sweetdMain() error {
 		Logger:   log.WithField("system", "dispenser"),
 		Tor:      t,
 		Network:  net,
+		Pairing:  pairingAdapter.Pairing,
 	})
 
-	log.Infof("Created dispenser.")
+	pairingAdapter.Dispenser = dispenser
 
-	if cfg.Pairing.Interface != "" {
-		// create subsystem responsible for pairing
-		pairingController, err := pairing.NewController(&pairing.Config{
-			Logger:    log.WithField("system", "pairing"),
-			AdapterId: cfg.Pairing.Interface,
-			Dispenser: dispenser,
-		})
-		if err != nil {
-			return errors.Errorf("Could not create pairing controller: %v", err)
-		}
+	log.Infof("created dispenser")
 
-		log.Infof("Created pairing controller.")
-
-		err = pairingController.Start()
-		if err != nil {
-			return errors.Errorf("Could not start pairing controller: %v", err)
-		}
-
-		log.Infof("Started pairing controller.")
-
-		defer func() {
-			err := pairingController.Stop()
-			if err != nil {
-				log.Errorf("Could not properly shut down pairing controller: %v", err)
-			}
-
-			log.Infof("Stopped pairing controller.")
-		}()
+	err = pairingAdapter.Pairing.Start()
+	if err != nil {
+		return errors.Errorf("unable to start pairing controller: %v", err)
 	}
+
+	log.Info("started pairing controller")
+
+	defer func() {
+		err := pairingAdapter.Pairing.Stop()
+		if err != nil {
+			log.Errorf("unable to stop pairing controller: %v", err)
+		} else {
+			log.Info("stopped pairing controller")
+		}
+	}()
 
 	// Handle interrupt signals correctly
 	go func() {
