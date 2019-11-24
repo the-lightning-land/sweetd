@@ -19,8 +19,17 @@ type WpaConnection struct {
 	Ssid string
 }
 
+type EncryptionType uint8
+
+const (
+	EncryptionPersonal EncryptionType = iota
+	EncryptionEnterprise
+	EncryptionNone
+)
+
 type Wifi struct {
-	Ssid string
+	Ssid       string
+	Encryption EncryptionType
 }
 
 type ScanClient struct {

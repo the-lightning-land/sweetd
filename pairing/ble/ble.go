@@ -13,8 +13,6 @@ import (
 	"strings"
 )
 
-const bluezObjectPath = dbus.ObjectPath("/org/bluez")
-
 const UserDescriptionDescriptorUuid = "2901"
 const PresentationFormatDescriptorUuid = "2904"
 
@@ -52,12 +50,12 @@ type gattCharacteristic struct {
 	properties               *gatt.GattCharacteristic1Properties
 	characteristicObjectPath dbus.ObjectPath
 	writeHandler             WriteHandler
-	ReadHandler              ReadHandler
+	readHandler              ReadHandler
 }
 
 func (c *gattCharacteristic) ReadValue(options map[string]interface{}) ([]byte, *dbus.Error) {
-	if c.ReadHandler != nil {
-		value, err := c.ReadHandler()
+	if c.readHandler != nil {
+		value, err := c.readHandler()
 		if err != nil {
 			return nil, dbus.MakeFailedError(err)
 		}
@@ -77,6 +75,13 @@ func (c *gattCharacteristic) WriteValue(value []byte, options map[string]interfa
 	c.properties.Lock()
 	c.properties.Value = value
 	c.properties.Unlock()
+
+	if c.writeHandler != nil {
+		err := c.writeHandler(value)
+		if err != nil {
+			return dbus.MakeFailedError(err)
+		}
+	}
 
 	return nil
 }
@@ -242,7 +247,7 @@ func WithCharacteristicWriteHandler(handler WriteHandler) CharacteristicOption {
 
 func WithCharacteristicReadHandler(handler ReadHandler) CharacteristicOption {
 	return func(characteristic *gattCharacteristic) error {
-		characteristic.ReadHandler = handler
+		characteristic.readHandler = handler
 
 		if !hasFlag(gatt.FlagCharacteristicRead, characteristic.properties.Flags) {
 			characteristic.properties.Lock()
@@ -383,7 +388,7 @@ func WithCharacteristicDescriptor(descriptorUuid string, opts ...DescriptorOptio
 }
 
 func NewGattApp(adapterId string, appPath string, opts ...AppOption) *GattApp {
-	adapterObjectPath := bluezObjectPath + "/" + "hci0"
+	adapterObjectPath := dbus.ObjectPath(bluez.OrgBluezPath + "/" + "hci0")
 	appObjectPath := dbus.ObjectPath(appPath)
 
 	app := &GattApp{

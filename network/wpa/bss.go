@@ -14,9 +14,18 @@ func (b *BSS) String() string {
 	return string(b.obj.Path())
 }
 
+type WpaType uint8
+
+const (
+	WpaPersonal WpaType = iota
+	WpaEnterprise
+	WpaNone
+)
+
 type Bss struct {
-	Ssid  string
-	Bssid string
+	Ssid    string
+	Bssid   string
+	WpaType WpaType
 }
 
 func (b *BSS) GetAll() (*Bss, error) {
@@ -50,6 +59,32 @@ func (b *BSS) GetAll() (*Bss, error) {
 		}
 	} else {
 		return nil, errors.Errorf("mandatory property BSSID was missing")
+	}
+
+	bss.WpaType = WpaNone
+
+	if val, ok := props["RSN"]; ok {
+		if wpa, ok := val.Value().(map[string]dbus.Variant); ok {
+			if val, ok := wpa["KeyMgmt"]; ok {
+				if keyMgmts, ok := val.Value().([]string); ok {
+					for _, keyMgmt := range keyMgmts {
+						if keyMgmt == "wpa-psk" {
+							bss.WpaType = WpaPersonal
+						} else if keyMgmt == "wpa-eap" {
+							bss.WpaType = WpaEnterprise
+						} else if keyMgmt == "wpa-none" {
+							bss.WpaType = WpaNone
+						} else {
+							return nil, errors.Errorf("unknown wpa key management type: %s", keyMgmt)
+						}
+					}
+				}
+			}
+		} else {
+			return nil, errors.Errorf("could not convert WPA to dictionary: %v", val)
+		}
+	} else {
+		return nil, errors.Errorf("mandatory property WPA was missing")
 	}
 
 	return &bss, nil

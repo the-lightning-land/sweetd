@@ -114,9 +114,24 @@ func (n *WpaNetwork) Scan() (*ScanClient, error) {
 				continue
 			}
 
-			wifisChan <- &Wifi{
+			if b.Ssid == "" {
+				// skip stations with empty ssid
+				continue
+			}
+
+			wifi := &Wifi{
 				Ssid: b.Ssid,
 			}
+
+			if b.WpaType == wpa.WpaPersonal {
+				wifi.Encryption = EncryptionPersonal
+			} else if b.WpaType == wpa.WpaEnterprise {
+				wifi.Encryption = EncryptionEnterprise
+			} else {
+				wifi.Encryption = EncryptionNone
+			}
+
+			wifisChan <- wifi
 		}
 
 		for {
@@ -132,9 +147,24 @@ func (n *WpaNetwork) Scan() (*ScanClient, error) {
 					continue
 				}
 
-				wifisChan <- &Wifi{
+				if b.Ssid == "" {
+					// skip stations with empty ssid
+					continue
+				}
+
+				wifi := &Wifi{
 					Ssid: b.Ssid,
 				}
+
+				if b.WpaType == wpa.WpaPersonal {
+					wifi.Encryption = EncryptionPersonal
+				} else if b.WpaType == wpa.WpaEnterprise {
+					wifi.Encryption = EncryptionEnterprise
+				} else {
+					wifi.Encryption = EncryptionNone
+				}
+
+				wifisChan <- wifi
 			case done, ok := <-doneClient.ScanDone:
 				if !ok {
 					close(wifisChan)

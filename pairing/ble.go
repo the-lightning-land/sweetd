@@ -1,12 +1,10 @@
 package pairing
 
 import (
+	"encoding/json"
 	"github.com/go-errors/errors"
-	"github.com/godbus/dbus/v5"
 	"github.com/muka/go-bluetooth/api"
-	"github.com/muka/go-bluetooth/bluez/profile/adapter"
 	"github.com/muka/go-bluetooth/bluez/profile/advertising"
-	"github.com/sirupsen/logrus"
 	"github.com/the-lightning-land/sweetd/network"
 	"github.com/the-lightning-land/sweetd/pairing/ble"
 	"time"
@@ -16,7 +14,8 @@ import (
 var _ Controller = (*BLEController)(nil)
 
 const (
-	appPath = "/io/sweetbit"
+	appPath           = "/io/sweetbit/app"
+	advertisementPath = "/io/sweetbit/advertisement"
 
 	// unique uuid suffix for the candy dispenser
 	uuidSuffix = "-75dd-4a0e-b688-66b7df342cc6"
@@ -101,60 +100,69 @@ func NewController(config *BLEControllerConfig) (*BLEController, error) {
 		),
 	)
 
-	a, err := adapter.NewAdapter1FromAdapterID(controller.adapterId)
+	return controller, nil
+}
+
+func (c *BLEController) Advertise() error {
+	adapter, err := api.GetAdapter(c.adapterId)
 	if err != nil {
-		return nil, errors.Errorf("unable to create adapter: %v", err)
+		return errors.Errorf("unable to get adapter: %v", err)
 	}
 
-	err = a.SetAlias("Candy")
+	err = adapter.SetAlias("Candy")
 	if err != nil {
-		return nil, errors.Errorf("unable to set alias: %v", err)
+		return errors.Errorf("unable to set alias: %v", err)
 	}
 
-	err = a.SetDiscoverable(true)
+	err = adapter.SetDiscoverable(true)
 	if err != nil {
-		return nil, errors.Errorf("unable to make discoverable: %v", err)
+		return errors.Errorf("unable to make discoverable: %v", err)
 	}
 
-	err = a.SetDiscoverableTimeout(0)
+	err = adapter.SetDiscoverableTimeout(0)
 	if err != nil {
-		return nil, errors.Errorf("unable to set discoverable timeout: %v", err)
+		return errors.Errorf("unable to set discoverable timeout: %v", err)
 	}
 
-	err = a.SetPowered(true)
+	err = adapter.SetPowered(true)
 	if err != nil {
-		return nil, errors.Errorf("unable to set powered: %v", err)
+		return errors.Errorf("unable to set powered: %v", err)
 	}
 
-	adv := &advertising.LEAdvertisement1Properties{
+	advertisementProps := &advertising.LEAdvertisement1Properties{
 		Type:      advertising.AdvertisementTypePeripheral,
 		LocalName: "Candy",
 		ServiceUUIDs: []string{
 			candyServiceUuid,
 		},
+		Timeout:             0,
+		Duration:            0,
+		DiscoverableTimeout: 0,
+		Discoverable:        true,
 	}
 
-	advManagerPath := dbus.ObjectPath("/org/bluez/hci0/app/adv")
+	// advertisementPath := dbus.ObjectPath(advertisementPath)
 
-	_, err = api.ExposeAdvertisement(controller.adapterId, adv, 0)
+	advertisement, err := api.NewAdvertisement(c.adapterId, advertisementProps)
 	if err != nil {
-		return nil, errors.Errorf("unable to expose advertisement: %v", err)
+		return errors.Errorf("unable to create advertisement: %v", err)
 	}
 
-	advManager, err := advertising.NewLEAdvertisingManager1FromAdapterID(config.AdapterId)
+	err = api.ExposeDBusService(advertisement)
 	if err != nil {
-		logrus.Fatalf("unable to create advertisement manager: %v", err)
+		return errors.Errorf("unable to expose advertisement: &%v", err)
 	}
 
-	err = advManager.RegisterAdvertisement(advManagerPath, map[string]interface{}{})
+	advertisingManager, err := advertising.NewLEAdvertisingManager1FromAdapterID(c.adapterId)
 	if err != nil {
-		logrus.Fatalf("unable to register advertisement manager: %v", err)
+		return errors.Errorf("unable to create advertisement manager: %v", err)
 	}
 
-	return controller, nil
-}
+	err = advertisingManager.RegisterAdvertisement(advertisement.Path(), map[string]interface{}{})
+	if err != nil {
+		return errors.Errorf("unable to register advertisement manager: %v", err)
+	}
 
-func (c *BLEController) Advertise() error {
 	return nil
 }
 
@@ -165,13 +173,35 @@ func (c *BLEController) Start() error {
 	}
 
 	go func() {
+		type discoveredWifi struct {
+			Ssid       string `json:"ssid"`
+			Encryption string `json:"encryption"`
+		}
+
 		for {
-			wifi, ok := <-c.discoveredWifis
+			w, ok := <-c.discoveredWifis
 			if !ok {
 				break
 			}
 
-			err := c.notifyDisocveredWifi([]byte(wifi.Ssid))
+			wifi := discoveredWifi{
+				Ssid: w.Ssid,
+			}
+
+			if w.Encryption == network.EncryptionPersonal {
+				wifi.Encryption = "personal"
+			} else if w.Encryption == network.EncryptionEnterprise {
+				wifi.Encryption = "enterprise"
+			} else {
+				wifi.Encryption = "none"
+			}
+
+			value, err := json.Marshal(wifi)
+			if err != nil {
+				break
+			}
+
+			err = c.notifyDisocveredWifi(value)
 			if err != nil {
 				c.log.Errorf("unable to write discovered wifi: %v", err)
 			}
@@ -179,8 +209,6 @@ func (c *BLEController) Start() error {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
-
-	c.discoveredWifis <- &network.Wifi{Ssid: "jo"}
 
 	return nil
 }
@@ -195,7 +223,20 @@ func (c *BLEController) Stop() error {
 }
 
 func (c *BLEController) status() ([]byte, error) {
-	return []byte("works"), nil
+	type status struct {
+		Name string `json:"name"`
+	}
+
+	s := status{
+		Name: c.dispenser.GetName(),
+	}
+
+	value, err := json.Marshal(s)
+	if err != nil {
+		return nil, errors.Errorf("unable to serialize: %v", err)
+	}
+
+	return value, nil
 }
 
 func (c *BLEController) scanWifi(value []byte) error {
@@ -218,6 +259,36 @@ func (c *BLEController) scanWifi(value []byte) error {
 }
 
 func (c *BLEController) connectWifi(value []byte) error {
+	type config struct {
+		Ssid string `json:"ssid"`
+		Psk  string `json:"psk"`
+	}
+
+	var cfg config
+
+	err := json.Unmarshal(value, &cfg)
+	if err != nil {
+		return errors.Errorf("unable to deserialize: %v", err)
+	}
+
+	var conn network.Connection
+
+	if cfg.Psk != "" {
+		conn = network.WpaPskConnection{
+			Ssid: cfg.Ssid,
+			Psk:  cfg.Psk,
+		}
+	} else {
+		conn = network.WpaConnection{
+			Ssid: cfg.Ssid,
+		}
+	}
+
+	err = c.dispenser.ConnectWifi(conn)
+	if err != nil {
+		return errors.Errorf("unable to connect: %v", err)
+	}
+
 	return nil
 }
 
