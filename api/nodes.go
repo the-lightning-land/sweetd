@@ -71,7 +71,7 @@ func (a *Handler) postNodes() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			a.jsonError(w, fmt.Sprint("unable to read body: %v", err), http.StatusInternalServerError)
+			a.jsonError(w, fmt.Sprintf("unable to read body: %v", err), http.StatusInternalServerError)
 			return
 		}
 
