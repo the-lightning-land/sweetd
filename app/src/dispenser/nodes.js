@@ -32,14 +32,19 @@ function Nodes() {
     showModal();
   }
 
+  function deleteNode() {
+  }
+
   return (
     <div>
       {nodes.map(node => (
         <Node
+          id={node.id}
           name={node.name}
           onRename={rename}
           status="locked"
           onUnlock={unlock}
+          onDelete={deleteNode}
         />
       ))}
       <div className="">

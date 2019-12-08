@@ -12,16 +12,35 @@ import (
 func (d *Dispenser) maybeAttemptSavedWifiConnection(wg sync.WaitGroup) {
 	wg.Add(1)
 
-	wifiConnection, err := d.db.GetWifiConnection()
+	wifiConnection, err := d.db.GetWifi()
 	if err != nil {
 		d.log.Warnf("could not get wifi connection: %v", err)
 	}
 
 	if wifiConnection != nil {
-		err := d.network.Connect(&network.WpaPskConnection{
-			Ssid: wifiConnection.Ssid,
-			Psk:  wifiConnection.Psk,
-		})
+		var err error
+
+		switch conn := wifiConnection.(type) {
+		case *sweetdb.WifiPublic:
+			err = d.network.Connect(&network.WpaConnection{
+				Ssid: conn.Ssid,
+			})
+		case *sweetdb.WifiPersonal:
+			err = d.network.Connect(&network.WpaPersonalConnection{
+				Ssid: conn.Ssid,
+				Psk:  conn.Psk,
+			})
+		case *sweetdb.WifiEnterprise:
+			err = d.network.Connect(&network.WpaEnterpriseConnection{
+				Ssid:     conn.Ssid,
+				Identity: conn.Identity,
+				Password: conn.Password,
+			})
+		default:
+			d.log.Errorf("unknown connection type %T", wifiConnection)
+			wg.Done()
+			return
+		}
 		if err != nil {
 			d.log.Errorf("could not connect to saved wifi: %v", err)
 		}
@@ -34,16 +53,15 @@ func (d *Dispenser) maybeAttemptSavedWifiConnection(wg sync.WaitGroup) {
 
 func (d *Dispenser) ConnectToWifi(connection network.Connection) error {
 	switch conn := connection.(type) {
-	case *network.WpaPskConnection:
-		d.log.Infof("Connecting to wifi %v", conn)
+	case *network.WpaPersonalConnection:
+		d.log.Infof("Connecting to personal wifi %v", conn.Ssid)
 
 		err := d.network.Connect(conn)
 		if err != nil {
-			d.log.Errorf("Could not get Wifi networks: %v", err)
-			return errors.New("Could not get Wifi networks")
+			return errors.Errorf("unable to connect: %v", err)
 		}
 
-		err = d.SetWifiConnection(&sweetdb.WifiConnection{
+		err = d.SetWifiConnection(&sweetdb.WifiPersonal{
 			Ssid: conn.Ssid,
 			Psk:  conn.Psk,
 		})
@@ -51,16 +69,31 @@ func (d *Dispenser) ConnectToWifi(connection network.Connection) error {
 			d.log.Errorf("Could not save wifi connection: %v", err)
 		}
 	case *network.WpaConnection:
-		d.log.Infof("Connecting to wifi %v", conn)
+		d.log.Infof("Connecting to public wifi %v", conn.Ssid)
 
 		err := d.network.Connect(conn)
 		if err != nil {
-			d.log.Errorf("Could not get Wifi networks: %v", err)
-			return errors.New("Could not get Wifi networks")
+			return errors.Errorf("unable to connect: %v", err)
 		}
 
-		err = d.SetWifiConnection(&sweetdb.WifiConnection{
+		err = d.SetWifiConnection(&sweetdb.WifiPublic{
 			Ssid: conn.Ssid,
+		})
+		if err != nil {
+			d.log.Errorf("Could not save wifi connection: %v", err)
+		}
+	case *network.WpaEnterpriseConnection:
+		d.log.Infof("Connecting to enterprise wifi %v", conn.Ssid)
+
+		err := d.network.Connect(conn)
+		if err != nil {
+			return errors.Errorf("unable to connect: %v", err)
+		}
+
+		err = d.SetWifiConnection(&sweetdb.WifiEnterprise{
+			Ssid:     conn.Ssid,
+			Identity: conn.Identity,
+			Password: conn.Password,
 		})
 		if err != nil {
 			d.log.Errorf("Could not save wifi connection: %v", err)
@@ -72,10 +105,10 @@ func (d *Dispenser) ConnectToWifi(connection network.Connection) error {
 	return nil
 }
 
-func (d *Dispenser) SetWifiConnection(connection *sweetdb.WifiConnection) error {
+func (d *Dispenser) SetWifiConnection(connection sweetdb.Wifi) error {
 	d.log.Infof("Setting Wifi connection")
 
-	err := d.db.SetWifiConnection(connection)
+	err := d.db.SaveWifi(connection)
 	if err != nil {
 		return errors.Errorf("Failed setting Wifi connection: %v", err)
 	}

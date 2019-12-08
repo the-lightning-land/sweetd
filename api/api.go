@@ -4,6 +4,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/the-lightning-land/sweetd/network"
 	"github.com/the-lightning-land/sweetd/nodeman"
+	"github.com/the-lightning-land/sweetd/state"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/updater"
 	"net/http"
@@ -38,24 +39,26 @@ func NewHandler(config *Config) http.Handler {
 	router.Use(api.loggingMiddleware)
 	router.Use(api.localhostMiddleware)
 
-	router.Handle("/dispenser", api.handleGetDispenser()).Methods(http.MethodGet)
+	router.Handle("/dispenser", api.handleGetDispenser()).Methods(http.MethodGet, http.MethodOptions)
 	router.Handle("/dispenser", api.handlePatchDispenser()).Methods(http.MethodPatch)
-	router.Handle("/dispenser/events", api.handleGetDispenser()).Methods(http.MethodGet)
+	router.Handle("/dispenser/events", api.handleGetDispenser()).Methods(http.MethodGet, http.MethodOptions)
 
-	router.Handle("/updates", api.handlePostUpdate()).Methods(http.MethodPost)
-	router.Handle("/updates/{id}", api.handleGetUpdate()).Methods(http.MethodGet)
+	router.Handle("/updates", api.handlePostUpdate()).Methods(http.MethodPost, http.MethodOptions)
+	router.Handle("/updates/{id}", api.handleGetUpdate()).Methods(http.MethodGet, http.MethodOptions)
 	router.Handle("/updates/{id}", api.handlePatchUpdate()).Methods(http.MethodPatch)
-	router.Handle("/updates/{id}/events", api.handleGetUpdateEvents()).Methods(http.MethodGet)
+	router.Handle("/updates/{id}/events", api.handleGetUpdateEvents()).Methods(http.MethodGet, http.MethodOptions)
 
+	router.Handle("/nodes", api.getNodes()).Methods(http.MethodGet, http.MethodOptions)
 	router.Handle("/nodes", api.postNodes()).Methods(http.MethodPost)
-	router.Handle("/nodes", api.getNodes()).Methods(http.MethodGet)
-	router.Handle("/nodes/{id}", api.getNodes()).Methods(http.MethodGet)
+	router.Handle("/nodes/{id}", api.getNodes()).Methods(http.MethodGet, http.MethodOptions)
 	router.Handle("/nodes/{id}", api.patchNode()).Methods(http.MethodPatch)
 	router.Handle("/nodes/{id}", api.deleteNode()).Methods(http.MethodDelete)
 
-	router.Handle("/networks", api.handlePostUpdate()).Methods(http.MethodPost)
-	router.Handle("/networks/{id}", api.handlePostUpdate()).Methods(http.MethodPatch)
-	router.Handle("/networks/events", api.handlePostUpdate()).Methods(http.MethodGet)
+	router.Handle("/networks", api.handlePostUpdate()).Methods(http.MethodPost, http.MethodOptions)
+	router.Handle("/networks/{id}", api.handlePostUpdate()).Methods(http.MethodPatch, http.MethodOptions)
+	router.Handle("/networks/events", api.handlePostUpdate()).Methods(http.MethodGet, http.MethodOptions)
+
+	router.Use(mux.CORSMethodMiddleware(router))
 
 	api.Handler = router
 
@@ -96,9 +99,10 @@ type Dispenser interface {
 	DisableNode(id string) error
 	RenameNode(id string, name string) error
 	GetApiOnionID() string
+	GetPosOnionID() string
 	ToggleDispense(on bool)
-	SetWifiConnection(connection *sweetdb.WifiConnection) error
-	// GetState() dispenser.State
+	SetWifiConnection(connection sweetdb.Wifi) error
+	GetState() state.State
 	GetName() string
 	ShouldDispenseOnTouch() bool
 	ShouldBuzzOnDispense() bool
@@ -112,6 +116,7 @@ type Dispenser interface {
 	// SubscribeDispenses() *dispenser.DispenseClient
 	StartUpdate(url string) (*updater.Update, error)
 	GetUpdate(id string) (*updater.Update, error)
+	GetCurrentUpdate() (*updater.Update, error)
 	CancelUpdate(id string) (*updater.Update, error)
 	SubscribeUpdate(id string) (*updater.UpdateClient, error)
 	CommitUpdate(id string) (*updater.Update, error)

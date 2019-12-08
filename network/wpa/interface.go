@@ -101,8 +101,6 @@ func (i *Interface) ScanDone() (*ScanDoneClient, error) {
 				}
 
 				if signal.Name == "fi.w1.wpa_supplicant1.Interface.ScanDone" && signal.Path == i.obj.Path() {
-					println(signal.Name, signal.Body[0].(bool))
-
 					changeChan <- signal.Body[0].(bool)
 				}
 			}
@@ -124,6 +122,59 @@ func (i *Interface) PropertiesChanged() error {
 	}
 
 	return nil
+}
+
+type StateClient struct {
+	State  <-chan bool
+	Cancel func()
+}
+
+func (i *Interface) State() (*StateClient, error) {
+	changeChan := make(chan bool)
+	signalChan := make(chan *dbus.Signal)
+
+	client := &StateClient{
+		State: changeChan,
+		Cancel: func() {
+			i.wpa.conn.RemoveSignal(signalChan)
+
+			_ = i.wpa.conn.BusObject().RemoveMatchSignal("fi.w1.wpa_supplicant1.Interface", "PropertiesChanged", dbus.WithMatchObjectPath(i.obj.Path()))
+
+			close(changeChan)
+		},
+	}
+
+	go func() {
+		i.wpa.conn.Signal(signalChan)
+
+		for {
+			select {
+			case signal, ok := <-signalChan:
+				if !ok {
+					return
+				}
+
+				if signal.Name == "fi.w1.wpa_supplicant1.Interface.PropertiesChanged" && signal.Path == i.obj.Path() {
+					props := signal.Body[0].(map[string]dbus.Variant)
+					if stateVariant, ok := props["State"]; ok {
+						state := stateVariant.Value().(string)
+						if state == "completed" {
+							changeChan <- true
+						} else {
+							changeChan <- false
+						}
+					}
+				}
+			}
+		}
+	}()
+
+	call := i.wpa.conn.BusObject().AddMatchSignal("fi.w1.wpa_supplicant1.Interface", "PropertiesChanged", dbus.WithMatchObjectPath(i.obj.Path()))
+	if call.Err != nil {
+		return nil, errors.Errorf("could not add signal: %v", call.Err)
+	}
+
+	return client, nil
 }
 
 func (i *Interface) BSSs() ([]*BSS, error) {
@@ -148,17 +199,36 @@ func (i *Interface) BSSs() ([]*BSS, error) {
 	return bsss, nil
 }
 
-func (i *Interface) AddNetwork(ssid string, psk string) (*Network, error) {
+func (i *Interface) AddWpaNetwork(ssid string) (*Network, error) {
 	args := map[string]interface{}{}
+	args["ssid"] = ssid
+	args["key_mgmt"] = "NONE"
 
-	if psk != "" {
-		args["ssid"] = ssid
-		args["psk"] = psk
-	} else {
-		args["ssid"] = ssid
-		args["key_mgmt"] = "NONE"
-	}
+	return i.addNetwork(args)
+}
 
+func (i *Interface) AddWpaPersonalNetwork(ssid string, psk string) (*Network, error) {
+	args := map[string]interface{}{}
+	args["ssid"] = ssid
+	args["psk"] = psk
+
+	return i.addNetwork(args)
+}
+
+func (i *Interface) AddWpaEnterpriseNetwork(ssid string, identitiy string, password string) (*Network, error) {
+	args := map[string]interface{}{}
+	args["ssid"] = ssid
+	args["key_mgmt"] = "WPA-EAP"
+	args["identity"] = identitiy
+	args["password"] = password
+	args["eap"] = "WPA-EAP"
+	args["phase1"] = "peaplabel"
+	args["phase2"] = "auth=MSCHAPV2"
+
+	return i.addNetwork(args)
+}
+
+func (i *Interface) addNetwork(args map[string]interface{}) (*Network, error) {
 	call := i.obj.Call("fi.w1.wpa_supplicant1.Interface.AddNetwork", 0, args)
 	if call.Err != nil {
 		return nil, errors.Errorf("could not call: %v", call.Err)
@@ -187,10 +257,10 @@ func (i *Interface) RemoveNetwork(net *Network) error {
 	return nil
 }
 
-func (i *Interface) RemoveAllNetworks(net *Network) error {
+func (i *Interface) RemoveAllNetworks() error {
 	call := i.obj.Call("fi.w1.wpa_supplicant1.Interface.RemoveAllNetworks", 0)
 	if call.Err != nil {
-		return errors.Errorf("could not remove all networks: %v", call.Err)
+		return errors.Errorf("unable to remove all networks: %v", call.Err)
 	}
 
 	return nil

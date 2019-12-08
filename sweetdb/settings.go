@@ -11,15 +11,9 @@ var (
 	nameKey            = []byte("name")
 	dispenseOnTouchKey = []byte("dispenseOnTouch")
 	buzzOnDispenseKey  = []byte("buzzOnDispense")
-	wifiConnectionKey  = []byte("wifi")
 	posPrivateKeyKey   = []byte("posPrivateKey")
 	apiPrivateKeyKey   = []byte("apiPrivateKey")
 )
-
-type WifiConnection struct {
-	Ssid string `json:"ssid"`
-	Psk  string `json:"psk"`
-}
 
 func (db *DB) SetPosPrivateKey(key *rsa.PrivateKey) error {
 	return db.setPrivateKey(settingsBucket, posPrivateKeyKey, key)
@@ -35,20 +29,6 @@ func (db *DB) SetApiPrivateKey(key *rsa.PrivateKey) error {
 
 func (db *DB) GetApiPrivateKey() (*rsa.PrivateKey, error) {
 	return db.getPrivateKey(settingsBucket, apiPrivateKeyKey)
-}
-
-func (db *DB) SetWifiConnection(wifiConnection *WifiConnection) error {
-	return db.setJSON(settingsBucket, wifiConnectionKey, wifiConnection)
-}
-
-func (db *DB) GetWifiConnection() (*WifiConnection, error) {
-	var wifiConnection = &WifiConnection{}
-
-	if err := db.getJSON(settingsBucket, wifiConnectionKey, &wifiConnection); err != nil {
-		return nil, err
-	}
-
-	return wifiConnection, nil
 }
 
 func (db *DB) SetName(name string) error {

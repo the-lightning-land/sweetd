@@ -139,6 +139,9 @@ func sweetdMain() error {
 			Logger: log.WithField("system", "updater"),
 			DB:     sweetDB,
 		})
+		if err != nil {
+			return errors.Errorf("unable to create Mender updater: %v", err)
+		}
 
 		log.Info("Created Mender updater.")
 	default:
@@ -192,6 +195,9 @@ func sweetdMain() error {
 	log.Infof("Started Tor.")
 
 	defer func() {
+		t.StopProcessOnClose = true
+		t.DeleteDataDirOnClose = true
+
 		err := t.Close()
 		if err != nil {
 			log.Errorf("Could not properly stop Tor: %v", err)

@@ -24,6 +24,10 @@ func (n *NoopUpdater) GetUpdate(url string) (*Update, error) {
 	return nil, errors.New("no updater available")
 }
 
+func (n *NoopUpdater) GetCurrentUpdate() (*Update, error) {
+	return nil, nil
+}
+
 func (n *NoopUpdater) CancelUpdate(id string) (*Update, error) {
 	return nil, errors.New("no updater available")
 }
@@ -32,8 +36,7 @@ func (n *NoopUpdater) SubscribeUpdate(id string) (*UpdateClient, error) {
 	return nil, errors.New("no updater available")
 }
 
-func (n *NoopUpdater) unsubscribeUpdate(client *UpdateClient) error {
-	return errors.New("no updater available")
+func (n *NoopUpdater) unsubscribeUpdate(client *UpdateClient) {
 }
 
 func (m *NoopUpdater) CommitUpdate(id string) (*Update, error) {

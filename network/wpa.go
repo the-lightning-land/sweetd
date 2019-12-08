@@ -26,6 +26,7 @@ type WpaNetwork struct {
 	iface      *wpa.Interface
 	clients    map[uint32]*Client
 	nextClient nextClient
+	done       chan struct{}
 }
 
 func NewWpaNetwork(config *Config) *WpaNetwork {
@@ -58,10 +59,43 @@ func (n *WpaNetwork) Start() error {
 
 	n.iface = iface
 
+	client, err := iface.State()
+	if err != nil {
+		return errors.Errorf("unable to subscribe to states: %v", err)
+	}
+
+	// initialize a new done channel to be closed to stop
+	n.done = make(chan struct{})
+
+	go func() {
+		done := false
+
+		for !done {
+			select {
+			case on := <-client.State:
+				for _, client := range n.clients {
+					client.Updates <- &Connectivity{
+						Connected: on,
+						Ip:        "",
+						Ssid:      "",
+					}
+				}
+			case <-n.done:
+				// finish loop when program is done
+				done = true
+			}
+		}
+
+		client.Cancel()
+	}()
+
 	return nil
 }
 
 func (n *WpaNetwork) Stop() error {
+	// signal the dispenser run loop to stop
+	close(n.done)
+
 	err := n.wpa.Stop()
 	if err != nil {
 		return errors.Errorf("could not stop wpa: %v", err)
@@ -76,9 +110,32 @@ func (n *WpaNetwork) Status() *Status {
 }
 
 func (n *WpaNetwork) Connect(connection Connection) error {
-	switch connection.(type) {
-	case *WpaPskConnection:
+	var err error
+	var net *wpa.Network
+
+	err = n.iface.RemoveAllNetworks()
+	if err != nil {
+		return errors.Errorf("unable to remove all networks: %v", err)
+	}
+
+	switch conn := connection.(type) {
 	case *WpaConnection:
+		net, err = n.iface.AddWpaNetwork(conn.Ssid)
+	case *WpaPersonalConnection:
+		net, err = n.iface.AddWpaPersonalNetwork(conn.Ssid, conn.Psk)
+	case *WpaEnterpriseConnection:
+		net, err = n.iface.AddWpaEnterpriseNetwork(conn.Ssid, conn.Identity, conn.Password)
+	default:
+		return errors.Errorf("unknown connection type %T provided", connection)
+	}
+
+	if err != nil {
+		return errors.Errorf("unable to add network: %v", err)
+	}
+
+	err = net.Enable()
+	if err != nil {
+		return errors.Errorf("unable to enable network: %v", err)
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package sweetdb
 
 import (
 	"github.com/go-errors/errors"
+	"go.etcd.io/bbolt"
 )
 
 var (
@@ -52,7 +53,7 @@ func (db *DB) GetNodes() ([]LightningNode, error) {
 		id := string(k)
 		node, err := db.GetNode(id)
 		if err != nil {
-			return nil, errors.Errorf("unable to get node with id %s", id)
+			return nil, errors.Errorf("unable to get node with id %s: %v", id, err)
 		}
 
 		if node == nil {
@@ -79,7 +80,18 @@ func (db *DB) SaveNode(node LightningNode) error {
 }
 
 func (db *DB) RemoveNode(id string) error {
-	return nil
+	return db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists(nodesBucket)
+		if err != nil {
+			return err
+		}
+
+		if err := bucket.Delete([]byte(id)); err != nil {
+			return err
+		}
+
+		return nil
+	})
 }
 
 func (db *DB) GetNode(id string) (LightningNode, error) {

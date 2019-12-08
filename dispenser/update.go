@@ -13,6 +13,10 @@ func (d *Dispenser) GetUpdate(id string) (*updater.Update, error) {
 	return d.updater.GetUpdate(id)
 }
 
+func (d *Dispenser) GetCurrentUpdate() (*updater.Update, error) {
+	return d.updater.GetCurrentUpdate()
+}
+
 func (d *Dispenser) CancelUpdate(id string) (*updater.Update, error) {
 	return d.updater.CancelUpdate(id)
 }

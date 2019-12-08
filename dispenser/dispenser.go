@@ -15,21 +15,13 @@ import (
 	"github.com/the-lightning-land/sweetd/pairing"
 	"github.com/the-lightning-land/sweetd/pos"
 	"github.com/the-lightning-land/sweetd/reboot"
+	"github.com/the-lightning-land/sweetd/state"
 	"github.com/the-lightning-land/sweetd/sweetdb"
 	"github.com/the-lightning-land/sweetd/sweetlog"
 	"github.com/the-lightning-land/sweetd/updater"
 	"net/http"
 	"sync"
 	"time"
-)
-
-type State string
-
-const (
-	StateStarting State = "starting"
-	StateStarted        = "running"
-	StateStopping       = "stopping"
-	StateStopped        = "stopped"
 )
 
 type DispenseState int
@@ -121,7 +113,7 @@ type Dispenser struct {
 	apiHandler http.Handler
 
 	// state keeps track of the lifecycle of the dispenser
-	state State
+	state state.State
 }
 
 func NewDispenser(config *Config) *Dispenser {
@@ -137,7 +129,7 @@ func NewDispenser(config *Config) *Dispenser {
 		sweetLog:        config.SweetLog,
 		log:             config.Logger,
 		tor:             config.Tor,
-		state:           StateStopped,
+		state:           state.StateStopped,
 		posOnionService: onion.NewService(&onion.ServiceConfig{
 			Tor:    config.Tor,
 			Logger: config.Logger.WithField("system", "onion").WithField("for", "pos"),
@@ -312,11 +304,39 @@ func (d *Dispenser) notifyDispenseSubscribers(wg sync.WaitGroup) {
 	wg.Done()
 }
 
+// handleNetworking is run as a goroutine and handles network changes
+//func (d *Dispenser) handleNetworking(wg sync.WaitGroup) {
+//	wg.Add(1)
+//
+//	done := false
+//
+//	client := d.network.Subscribe()
+//
+//	for !done {
+//		select {
+//		case on := <-client.Updates:
+//			for _, client := range d.dispenseClients {
+//				client.Dispenses <- on
+//			}
+//		case <-d.done:
+//			// finish loop when program is done
+//			done = true
+//		}
+//	}
+//
+//	// cancel all client subscriptions
+//	for _, client := range d.dispenseClients {
+//		client.Cancel()
+//	}
+//
+//	wg.Done()
+//}
+
 // RunAndWait initializes all states and runs the dispenser in a blocking way until it is stopped
 func (d *Dispenser) RunAndWait() error {
 	var err error
 
-	d.state = StateStarting
+	d.state = state.StateStarting
 
 	// track tasks so function can be returned from only when all tasks are stopped
 	var wg sync.WaitGroup
@@ -330,24 +350,26 @@ func (d *Dispenser) RunAndWait() error {
 	// restore configs from the database
 	d.restoreConfigs()
 
+	//go d.handleNetworking(wg)
+
 	// start background routines
 	go d.maybeAttemptSavedWifiConnection(wg)
 	go d.notifyDispenseSubscribers(wg)
 	go d.runLightningNodes(wg)
 	go d.handleDispenses(wg)
 
-	go func() {
-		check, err := onion.Check(d.tor)
-		if err != nil {
-			d.log.Errorf("unable to check: %v", err)
-		}
-
-		if check {
-			d.log.Info("successfully connected to Tor")
-		} else {
-			d.log.Error("not connected to Tor")
-		}
-	}()
+	//go func() {
+	//	check, err := onion.Check(d.tor)
+	//	if err != nil {
+	//		d.log.Errorf("unable to check: %v", err)
+	//	}
+	//
+	//	if check {
+	//		d.log.Info("successfully connected to Tor")
+	//	} else {
+	//		d.log.Error("not connected to Tor")
+	//	}
+	//}()
 
 	err = d.pairing.Advertise()
 	if err != nil {
@@ -368,7 +390,7 @@ func (d *Dispenser) RunAndWait() error {
 		goto Teardown
 	}
 
-	d.state = StateStarted
+	d.state = state.StateStarted
 
 	// signal successful startup with two short buzzer noises
 	d.machine.DiagnosticNoise()
@@ -379,7 +401,7 @@ func (d *Dispenser) RunAndWait() error {
 	<-d.done
 
 Teardown:
-	d.state = StateStopping
+	d.state = state.StateStopping
 
 	// tear off dispenses channel
 	close(d.dispenses)
@@ -388,7 +410,7 @@ Teardown:
 	// wait for all registered tasks to finish
 	wg.Wait()
 
-	d.state = StateStopped
+	d.state = state.StateStopped
 
 	return err
 }
@@ -408,7 +430,7 @@ func (d *Dispenser) ToggleDispense(on bool) {
 	}
 }
 
-func (d *Dispenser) GetState() State {
+func (d *Dispenser) GetState() state.State {
 	return d.state
 }
 
@@ -471,23 +493,23 @@ func (d *Dispenser) SetBuzzOnDispense(buzzOnDispense bool) error {
 }
 
 func (d *Dispenser) Reboot() error {
-	d.state = StateStopping
-
 	err := reboot.Reboot()
 	if err != nil {
 		return errors.Errorf("Could not reboot: %v", err)
 	}
 
+	d.state = state.StateStopping
+
 	return nil
 }
 
 func (d *Dispenser) ShutDown() error {
-	d.state = StateStopping
-
 	err := reboot.ShutDown()
 	if err != nil {
 		return errors.Errorf("Could not shut down: %v", err)
 	}
+
+	d.state = state.StateStopping
 
 	return nil
 }

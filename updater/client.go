@@ -8,6 +8,6 @@ type UpdateClient struct {
 	updater    Updater
 }
 
-func (c *UpdateClient) Cancel() error {
-	return c.updater.unsubscribeUpdate(c)
+func (c *UpdateClient) Cancel() {
+	c.updater.unsubscribeUpdate(c)
 }

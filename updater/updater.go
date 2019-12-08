@@ -25,9 +25,10 @@ type Updater interface {
 	GetVersion() (string, error)
 	StartUpdate(url string) (*Update, error)
 	GetUpdate(id string) (*Update, error)
+	GetCurrentUpdate() (*Update, error)
 	CancelUpdate(id string) (*Update, error)
 	SubscribeUpdate(id string) (*UpdateClient, error)
-	unsubscribeUpdate(client *UpdateClient) error
+	unsubscribeUpdate(client *UpdateClient)
 	CommitUpdate(id string) (*Update, error)
 	RejectUpdate(id string) (*Update, error)
 }

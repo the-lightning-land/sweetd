@@ -10,13 +10,19 @@ func (s *Status) Connected() bool {
 
 type Connection interface{}
 
-type WpaPskConnection struct {
+type WpaPersonalConnection struct {
 	Ssid string
 	Psk  string
 }
 
 type WpaConnection struct {
 	Ssid string
+}
+
+type WpaEnterpriseConnection struct {
+	Ssid     string
+	Identity string
+	Password string
 }
 
 type EncryptionType uint8

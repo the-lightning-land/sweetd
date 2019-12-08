@@ -206,6 +206,8 @@ func (c *BLEController) Start() error {
 				c.log.Errorf("unable to write discovered wifi: %v", err)
 			}
 
+			// wait 100ms between wifi discovery notifications so that the client can keep up
+			// receiving them
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
@@ -260,8 +262,11 @@ func (c *BLEController) scanWifi(value []byte) error {
 
 func (c *BLEController) connectWifi(value []byte) error {
 	type config struct {
-		Ssid string `json:"ssid"`
-		Psk  string `json:"psk"`
+		Encryption string `json:"encryption"`
+		Ssid       string `json:"ssid"`
+		Psk        string `json:"psk"`
+		Identity   string `json:"identity"`
+		Password   string `json:"password"`
 	}
 
 	var cfg config
@@ -273,15 +278,24 @@ func (c *BLEController) connectWifi(value []byte) error {
 
 	var conn network.Connection
 
-	if cfg.Psk != "" {
-		conn = network.WpaPskConnection{
+	switch cfg.Encryption {
+	case "none":
+		conn = &network.WpaConnection{
+			Ssid: cfg.Ssid,
+		}
+	case "personal":
+		conn = &network.WpaPersonalConnection{
 			Ssid: cfg.Ssid,
 			Psk:  cfg.Psk,
 		}
-	} else {
-		conn = network.WpaConnection{
-			Ssid: cfg.Ssid,
+	case "enterprise":
+		conn = &network.WpaEnterpriseConnection{
+			Ssid:     cfg.Ssid,
+			Identity: cfg.Identity,
+			Password: cfg.Password,
 		}
+	default:
+		return errors.Errorf("unknown encryption type %s", cfg.Encryption)
 	}
 
 	err = c.dispenser.ConnectWifi(conn)

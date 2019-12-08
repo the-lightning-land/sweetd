@@ -64,6 +64,7 @@ func NewMenderUpdater(config *MenderUpdaterConfig) (*MenderUpdater, error) {
 		shouldCommit: false,
 		clients:      make(map[uint32]*UpdateClient),
 		nextClient:   nextClient{id: 0},
+		update:       nil,
 	}
 
 	if updater.log == nil {
@@ -102,6 +103,10 @@ func (m *MenderUpdater) GetUpdate(id string) (*Update, error) {
 	}
 
 	return result, nil
+}
+
+func (m *MenderUpdater) GetCurrentUpdate() (*Update, error) {
+	return m.update, nil
 }
 
 func (m *MenderUpdater) StartUpdate(url string) (*Update, error) {
@@ -264,10 +269,9 @@ func (m *MenderUpdater) notifyUpdateClients() {
 	}
 }
 
-func (m *MenderUpdater) unsubscribeUpdate(client *UpdateClient) error {
+func (m *MenderUpdater) unsubscribeUpdate(client *UpdateClient) {
 	delete(m.clients, client.Id)
 	close(client.cancelChan)
-	return nil
 }
 
 func (m *MenderUpdater) CommitUpdate(id string) (*Update, error) {

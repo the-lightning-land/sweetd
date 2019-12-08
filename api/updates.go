@@ -149,15 +149,9 @@ func (a *Handler) handleGetUpdateEvents() http.HandlerFunc {
 			a.jsonError(w, fmt.Sprintf("No update with id %s found", id), http.StatusNotFound)
 		}
 
-		defer func() {
-			err := client.Cancel()
-			if err != nil {
-				a.log.Errorf("Could not close client: %v", err)
-			}
-		}()
-
 		c, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			client.Cancel()
 			a.jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -187,6 +181,7 @@ func (a *Handler) handleGetUpdateEvents() http.HandlerFunc {
 		// write pump
 		go func() {
 			defer c.Close()
+			defer client.Cancel()
 
 			ticker := time.NewTicker(54 * time.Second)
 			defer ticker.Stop()

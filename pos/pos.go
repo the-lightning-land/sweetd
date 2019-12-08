@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/the-lightning-land/sweetd/lightning"
+	"github.com/the-lightning-land/sweetd/nodeman"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -16,6 +17,8 @@ import (
 var localhostOriginPattern = regexp.MustCompile(`^https?://localhost(:\d+)?$`)
 
 type Dispenser interface {
+	GetNodes() []nodeman.LightningNode
+	GetNode(id string) nodeman.LightningNode
 }
 
 type Config struct {
@@ -35,8 +38,6 @@ type Handler struct {
 	http.Handler
 	log       Logger
 	dispenser Dispenser
-	// Deprecated: use dispenser methods directly
-	node *Node
 }
 
 func NewHandler(config *Config) *Handler {
@@ -56,9 +57,9 @@ func NewHandler(config *Config) *Handler {
 	api.Use(pos.createLoggingMiddleware(pos.log.Infof))
 	api.Use(pos.localhostMiddleware)
 	api.Use(pos.availabilityMiddleware)
-	api.Handle("/invoices/{rHash}/status", pos.handleStreamInvoiceStatus()).Methods(http.MethodGet)
-	api.Handle("/invoices/{rHash}", pos.handleGetInvoice()).Methods(http.MethodGet)
-	api.Handle("/invoices", pos.handleAddInvoice()).Methods(http.MethodPost)
+	api.Handle("/invoices/{rHash}/status", pos.handleStreamInvoiceStatus()).Methods(http.MethodGet, http.MethodOptions)
+	api.Handle("/invoices/{rHash}", pos.handleGetInvoice()).Methods(http.MethodGet, http.MethodOptions)
+	api.Handle("/invoices", pos.handleAddInvoice()).Methods(http.MethodPost, http.MethodOptions)
 	api.Use(mux.CORSMethodMiddleware(api))
 
 	box := packr.New("web", "./out")
@@ -91,9 +92,19 @@ func (p *Handler) localhostMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func (p *Handler) getActiveNode() nodeman.LightningNode {
+	nodes := p.dispenser.GetNodes()
+
+	if len(nodes) > 0 {
+		return nodes[0]
+	}
+
+	return nil
+}
+
 func (p *Handler) availabilityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if p.node == nil {
+		if p.getActiveNode() == nil {
 			p.log.Errorf("PoS request failed due to unavailable node")
 			p.jsonError(w, "No node is available at the moment", http.StatusServiceUnavailable)
 			return
@@ -169,7 +180,7 @@ func (p *Handler) handleStreamInvoiceStatus() http.HandlerFunc {
 			ticker := time.NewTicker(54 * time.Second)
 			defer ticker.Stop()
 
-			client, err := p.node.SubscribeInvoices()
+			client, err := p.getActiveNode().SubscribeInvoices()
 			if err != nil {
 				p.log.Errorf("Could not subscribe to invoices: %v", err)
 				return
@@ -213,7 +224,7 @@ func (p *Handler) handleGetInvoice() http.HandlerFunc {
 		vars := mux.Vars(r)
 		rHash := vars["rHash"]
 
-		invoice, err := p.node.GetInvoice(rHash)
+		invoice, err := p.getActiveNode().GetInvoice(rHash)
 		if err != nil {
 			p.jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -234,7 +245,7 @@ func (p *Handler) handleGetInvoice() http.HandlerFunc {
 
 func (p *Handler) handleAddInvoice() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		invoice, err := p.node.AddInvoice(&lightning.InvoiceRequest{
+		invoice, err := p.getActiveNode().AddInvoice(&lightning.InvoiceRequest{
 		})
 		if err != nil {
 			p.jsonError(w, err.Error(), http.StatusInternalServerError)

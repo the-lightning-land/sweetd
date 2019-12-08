@@ -82,7 +82,9 @@ func (d *Dispenser) handleLightningNodeInvoices(client *lightning.InvoicesClient
 			break
 		}
 
-		d.payments <- invoice
+		if invoice.Settled {
+			d.payments <- invoice
+		}
 	}
 }
 

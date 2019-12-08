@@ -114,6 +114,7 @@ func (r *LndNode) run() {
 	invoices, err := r.client.SubscribeInvoices(ctx, &lnrpc.InvoiceSubscription{})
 	if err != nil {
 		r.logger.Errorf("Could not subscribe to invoices: %v", err)
+		return
 	}
 
 	for {
