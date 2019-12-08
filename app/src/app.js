@@ -1,5 +1,4 @@
 import React, { useEffect, useCallback } from 'react';
-import Dispenser from './dispenser';
 import { useDispenserState } from './hooks/state';
 import { useNodesState } from './hooks/state';
 import Node from './node';

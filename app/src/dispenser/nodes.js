@@ -16,7 +16,7 @@ function Nodes() {
     }
 
     doFetch();
-  }, []);
+  }, [setNodes]);
 
   const [showModal] = useModal(({ in: open, onExited }) => (
     <Modal open={open} onClose={onExited}>
